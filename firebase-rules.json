@@ -1,0 +1,15 @@
+{
+  "rules": {
+    "chats": {
+      "$chatId": {
+        ".read": "auth != null && $chatId.matches('.*' + auth.uid + '.*')",
+        ".write": "auth != null && $chatId.matches('.*' + auth.uid + '.*')",
+        "messages": {
+          "$messageId": {
+            ".validate": "newData.hasChildren(['senderId', 'message', 'timestamp']) && newData.child('senderId').val() == auth.uid && newData.child('timestamp').val() <= now"
+          }
+        }
+      }
+    }
+  }
+} 

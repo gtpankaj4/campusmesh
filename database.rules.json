@@ -1,0 +1,35 @@
+{
+  /* Visit https://firebase.google.com/docs/database/security to learn more about security rules. */
+  "rules": {
+    "chats": {
+      "$chatId": {
+        ".read": "auth != null && ($chatId.contains(auth.uid))",
+        ".write": "auth != null && ($chatId.contains(auth.uid))",
+        "messages": {
+          "$messageId": {
+            ".read": "auth != null && ($chatId.contains(auth.uid))",
+            ".write": "auth != null && ($chatId.contains(auth.uid)) && newData.hasChildren(['senderId', 'message', 'timestamp']) && newData.child('senderId').val() == auth.uid"
+          }
+        }
+      }
+    },
+    "userChats": {
+      "$userId": {
+        ".read": "auth != null && auth.uid === $userId",
+        ".write": "auth != null"
+      }
+    },
+    "users": {
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $userId"
+      }
+    },
+    "notifications": {
+      "$userId": {
+        ".read": "auth != null && auth.uid === $userId",
+        ".write": "auth != null"
+      }
+    }
+  }
+}
