@@ -60,7 +60,7 @@ export default function ChatButton({ postCreatorId, className = '', children }: 
         try {
           const basicUserData = {
             uid: postCreatorId,
-            email: `user_${postCreatorId}@campusmess.com`,
+            email: `user_${postCreatorId}@campusmesh.com`,
             username: `User_${postCreatorId.slice(-6)}`,
             displayName: `User ${postCreatorId.slice(-6)}`,
             createdAt: Date.now()
@@ -169,7 +169,7 @@ export default function ChatButton({ postCreatorId, className = '', children }: 
         errorMessage = 'Network error. Please check your connection.';
       }
       
-      alert(errorMessage);
+      console.error('Chat error:', errorMessage);
       
       // Still attempt navigation as fallback
       router.push(`/chat/${chatId}`);

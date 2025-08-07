@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { auth, realtimeDb, db } from '@/lib/firebase';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { ref, onValue, off, set, remove } from 'firebase/database';
@@ -34,6 +35,7 @@ export default function NotificationSystem() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const router = useRouter();
 
   useEffect(() => {
     if (!user) return;
@@ -90,6 +92,9 @@ export default function NotificationSystem() {
       window.location.href = `/chat/${notification.data.chatId}`;
     } else if (notification.type === 'post' && notification.data?.communityId) {
       window.location.href = `/dashboard`;
+    } else if (notification.type === 'join_request' && notification.data?.communityId) {
+      // Redirect to moderation panel with requests tab
+      window.location.href = `/community/${notification.data.communityId}/moderate?tab=requests`;
     }
     
     setShowNotifications(false);
@@ -114,17 +119,15 @@ export default function NotificationSystem() {
     <div className="relative">
       {/* Notification Bell */}
       <button
-        onClick={() => setShowNotifications(!showNotifications)}
-        className="relative p-2 text-gray-600 hover:text-gray-800 transition-colors"
+        onClick={() => router.push('/notifications')}
+        className="relative p-2 text-gray-600 hover:text-gray-800 transition-colors rounded-lg hover:bg-gray-100"
+        title="View all notifications"
       >
         <BellIcon className="w-6 h-6" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse ring-2 ring-red-200">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
-        {unreadCount === 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-500 w-3 h-3 rounded-full animate-pulse ring-2 ring-red-200 hidden" id="notification-dot"></span>
+          <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center animate-pulse ring-2 ring-red-200">
+            <span className="text-white text-xs font-bold">{unreadCount > 9 ? '9+' : unreadCount}</span>
+          </div>
         )}
       </button>
 

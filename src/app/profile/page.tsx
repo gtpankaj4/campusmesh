@@ -108,7 +108,7 @@ export default function ProfilePage() {
       <div className="lg:hidden">
 
         {/* Mobile Profile Content */}
-        <div className="px-4 py-6 pt-12">
+        <div className="px-4 py-6 pt-8">
           {/* User Info */}
           <div className="bg-white rounded-lg p-6 mb-6">
             <div className="flex items-center space-x-4 mb-4">
@@ -129,18 +129,18 @@ export default function ProfilePage() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <p className="text-2xl font-bold text-gray-900">{profile?.postsCount || 0}</p>
-                <p className="text-sm text-gray-500">Posts</p>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 hover:scale-105 transition-transform duration-200">
+                <p className="text-2xl font-bold text-blue-600">{profile?.postsCount || 0}</p>
+                <p className="text-sm text-blue-500 font-medium">Posts</p>
               </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900">{profile?.commentsCount || 0}</p>
-                <p className="text-sm text-gray-500">Comments</p>
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 hover:scale-105 transition-transform duration-200">
+                <p className="text-2xl font-bold text-green-600">{profile?.commentsCount || 0}</p>
+                <p className="text-sm text-green-500 font-medium">Comments</p>
               </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900">{profile?.communitiesCount || 0}</p>
-                <p className="text-sm text-gray-500">Communities</p>
+              <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl p-4 hover:scale-105 transition-transform duration-200">
+                <p className="text-2xl font-bold text-purple-600">{profile?.communitiesCount || 0}</p>
+                <p className="text-sm text-purple-500 font-medium">Meshes</p>
               </div>
             </div>
           </div>
@@ -207,7 +207,7 @@ export default function ProfilePage() {
       <div className="hidden lg:block">
 
         {/* Desktop Content */}
-        <div className="max-w-7xl mx-auto px-6 py-8 pt-16">
+        <div className="max-w-7xl mx-auto px-6 py-8 pt-8">
           <div className="grid grid-cols-12 gap-8">
             {/* Left Sidebar */}
             <div className="col-span-4">
@@ -323,7 +323,7 @@ export default function ProfilePage() {
 
       {/* Help Modal */}
       {showHelp && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl">
               <div className="flex items-center justify-between">
@@ -347,17 +347,17 @@ export default function ProfilePage() {
               </div>
 
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">How Communities & Submesses Work</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">How Meshes & Submeshes Work</h3>
                 <div className="bg-blue-50 rounded-lg p-4 mb-4">
-                  <h4 className="font-semibold text-blue-900 mb-2">Communities</h4>
+                  <h4 className="font-semibold text-blue-900 mb-2">Meshes</h4>
                   <p className="text-blue-800 text-sm mb-3">
-                    Communities are groups like "Nepalese Student Association of ULM" or "CSCI 2000 Fall 2025". 
-                    Each community can have multiple submesses (categories) for different types of posts.
+                    Meshes are groups like "Nepalese Student Association of ULM" or "CSCI 2000 Fall 2025". 
+                    Each mesh can have multiple submeshes (categories) for different types of posts.
                   </p>
                   
-                  <h4 className="font-semibold text-blue-900 mb-2">Submesses</h4>
+                  <h4 className="font-semibold text-blue-900 mb-2">Submeshes</h4>
                   <p className="text-blue-800 text-sm">
-                    Submesses are categories within communities. For example, the NSA ULM community might have submesses for:
+                    Submeshes are categories within meshes. For example, the NSA ULM mesh might have submeshes for:
                   </p>
                   <ul className="text-blue-800 text-sm mt-2 ml-4 list-disc">
                     <li><strong>Rides:</strong> Carpooling and transportation</li>
@@ -376,9 +376,9 @@ export default function ProfilePage() {
                       1
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900">Join Communities</h4>
+                      <h4 className="font-semibold text-gray-900">Join Meshes</h4>
                       <p className="text-gray-600 text-sm">
-                        Go to the Communities page to find and join communities relevant to your interests, classes, or organizations.
+                        Go to the Meshes page to find and join meshes relevant to your interests, classes, or organizations.
                       </p>
                     </div>
                   </div>
@@ -390,7 +390,7 @@ export default function ProfilePage() {
                     <div>
                       <h4 className="font-semibold text-gray-900">Create Posts</h4>
                       <p className="text-gray-600 text-sm">
-                        When creating a post, you must select a community and a submess. This helps organize content and makes it easier for others to find relevant posts.
+                        When creating a post, you must select a mesh and a submesh. This helps organize content and makes it easier for others to find relevant posts.
                       </p>
                     </div>
                   </div>
@@ -402,7 +402,7 @@ export default function ProfilePage() {
                     <div>
                       <h4 className="font-semibold text-gray-900">Filter and Browse</h4>
                       <p className="text-gray-600 text-sm">
-                        Use the filters on the home page to view posts from specific communities or submesses. You can also browse all posts or filter by category.
+                        Use the filters on the home page to view posts from specific meshes or submeshes. You can also browse all posts or filter by category.
                       </p>
                     </div>
                   </div>

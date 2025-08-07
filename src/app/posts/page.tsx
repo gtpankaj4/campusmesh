@@ -3,10 +3,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, where, updateDoc, increment } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, getDoc, where, updateDoc, increment, deleteDoc, getDocs, setDoc } from "firebase/firestore";
 import { storage } from "@/lib/firebase";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { auth, db } from "@/lib/firebase";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref, set } from "firebase/database";
+import { auth, db, realtimeDb } from "@/lib/firebase";
 import { PlusIcon, UserIcon, UserGroupIcon, AcademicCapIcon, BookOpenIcon, HeartIcon, PhotoIcon, LockClosedIcon, GlobeAltIcon, XMarkIcon, ChatBubbleLeftIcon, PaperAirplaneIcon, ChevronDownIcon, ChevronUpIcon, TrashIcon, StarIcon } from "@heroicons/react/24/outline";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -15,6 +16,7 @@ dayjs.extend(relativeTime);
 import Community from "@/components/Community";
 import RepBadge from "@/components/RepBadge";
 import Navbar from "@/components/Navbar";
+import Toast from "@/components/Toast";
 
 interface EnrollmentQuestion {
   id: string;
@@ -75,6 +77,13 @@ export default function CommunitiesPage() {
   const [showPostModal, setShowPostModal] = useState(false);
   const [selectedPostForModal, setSelectedPostForModal] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showImageUpload, setShowImageUpload] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinAnswers, setJoinAnswers] = useState<{[key: string]: string}>({});
+  const [joiningCommunityData, setJoiningCommunityData] = useState<any>(null);
+  const [pendingRequests, setPendingRequests] = useState<string[]>([]);
+  const [joinRequestCounts, setJoinRequestCounts] = useState<{[communityId: string]: number}>({});
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -94,7 +103,17 @@ export default function CommunitiesPage() {
   const [previewURL, setPreviewURL] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [joiningCommunity, setJoiningCommunity] = useState<string | null>(null);
+  const [leavingCommunity, setLeavingCommunity] = useState<string | null>(null);
+  const [toast, setToast] = useState({ message: '', type: 'success' as 'success' | 'error', isVisible: false });
   const router = useRouter();
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type, isVisible: true });
+  };
+
+  const hideToast = () => {
+    setToast(prev => ({ ...prev, isVisible: false }));
+  };
 
   const loadUserProfile = async (userId: string) => {
     try {
@@ -145,6 +164,65 @@ export default function CommunitiesPage() {
     }
   };
 
+  const loadPendingRequests = async (userId: string) => {
+    try {
+      const joinRequestsRef = collection(db, 'joinRequests');
+      const pendingQuery = query(
+        joinRequestsRef,
+        where('userId', '==', userId),
+        where('status', '==', 'pending')
+      );
+      const pendingSnap = await getDocs(pendingQuery);
+      
+      const pendingCommunityIds = pendingSnap.docs.map(doc => doc.data().communityId);
+      setPendingRequests(pendingCommunityIds);
+    } catch (error) {
+      console.error('Error loading pending requests:', error);
+      setPendingRequests([]);
+    }
+  };
+
+  const loadJoinRequestCounts = async (userId: string) => {
+    try {
+      // Get user's moderated communities
+      const userCommunitiesRef = collection(db, 'users', userId, 'communities');
+      const userCommunitiesSnap = await getDocs(userCommunitiesRef);
+      const moderatedCommunities = userCommunitiesSnap.docs.filter(doc => doc.data().role === 'admin').map(doc => doc.data().communityId);
+      
+      // Also include communities where user is creator
+      const communitiesRef = collection(db, 'communities');
+      const creatorQuery = query(communitiesRef, where('creatorId', '==', userId));
+      const creatorSnap = await getDocs(creatorQuery);
+      const createdCommunities = creatorSnap.docs.map(doc => doc.id);
+      
+      const allModeratedCommunities = [...new Set([...moderatedCommunities, ...createdCommunities])];
+      
+      if (allModeratedCommunities.length === 0) {
+        setJoinRequestCounts({});
+        return;
+      }
+
+      // Get pending join requests for these communities
+      const joinRequestsRef = collection(db, 'joinRequests');
+      const counts: {[communityId: string]: number} = {};
+      
+      for (const communityId of allModeratedCommunities) {
+        const pendingQuery = query(
+          joinRequestsRef,
+          where('communityId', '==', communityId),
+          where('status', '==', 'pending')
+        );
+        const pendingSnap = await getDocs(pendingQuery);
+        counts[communityId] = pendingSnap.size;
+      }
+      
+      setJoinRequestCounts(counts);
+    } catch (error) {
+      console.error('Error loading join request counts:', error);
+      setJoinRequestCounts({});
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -152,6 +230,8 @@ export default function CommunitiesPage() {
         await loadUserProfile(user.uid);
         await loadCommunities();
         await loadUserCommunities(user.uid);
+        await loadPendingRequests(user.uid);
+        await loadJoinRequestCounts(user.uid);
       } else {
         router.push("/login");
       }
@@ -166,14 +246,14 @@ export default function CommunitiesPage() {
     if (file) {
       // Validate file size (5MB limit)
       if (file.size > 5 * 1024 * 1024) {
-        alert('Image size must be less than 5MB. Please choose a smaller image.');
+        showToast('Image size must be less than 5MB. Please choose a smaller image.', 'error');
         event.target.value = ''; // Clear the input
         return;
       }
 
       // Validate file type
       if (!file.type.startsWith('image/')) {
-        alert('Please select a valid image file (JPG, PNG, GIF, etc.).');
+        showToast('Please select a valid image file (JPG, PNG, GIF, etc.).', 'error');
         event.target.value = ''; // Clear the input
         return;
       }
@@ -209,10 +289,10 @@ export default function CommunitiesPage() {
       // Create storage reference with better naming
       const timestamp = Date.now();
       const fileName = `${timestamp}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const storageRef = ref(storage, `community-photos/${fileName}`);
+              const imageStorageRef = storageRef(storage, `community-photos/${fileName}`);
       
       // Upload with timeout
-      const uploadPromise = uploadBytes(storageRef, file);
+      const uploadPromise = uploadBytes(imageStorageRef, file);
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Upload timeout - please try again')), 15000); // 15 second timeout
       });
@@ -329,7 +409,9 @@ export default function CommunitiesPage() {
         courseCode: formData.courseCode.trim(),
         createdAt: serverTimestamp(),
         tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
-        enrollmentQuestions: formData.enrollmentQuestions.filter(q => q.question.trim().length > 0),
+        enrollmentQuestions: formData.isPrivate && formData.enrollmentQuestions.filter(q => q.question.trim().length > 0).length === 0 
+          ? [{ question: "Why do you want to join this community?", type: "text", required: true }]
+          : formData.enrollmentQuestions.filter(q => q.question.trim().length > 0),
         submesses: [allSubmess, ...formData.submesses.filter(s => s.name.trim().length > 0)],
         members: [user.uid]
       };
@@ -368,7 +450,7 @@ export default function CommunitiesPage() {
       console.error('❌ Error creating community:', error);
       
       // Show user-friendly error message
-      let errorMessage = 'Failed to create community. Please try again.';
+              let errorMessage = 'Failed to create mesh. Please try again.';
       if (error.message?.includes('image') || error.message?.includes('upload')) {
         errorMessage = `Image upload failed: ${error.message}`;
       } else if (error.message?.includes('permission') || error.message?.includes('unauthorized')) {
@@ -377,83 +459,363 @@ export default function CommunitiesPage() {
         errorMessage = 'Network error. Please check your connection and try again.';
       }
       
-      alert(errorMessage);
+      showToast(errorMessage, 'error');
     } finally {
       setIsSubmitting(false);
       setUploadProgress('');
     }
   };
 
+  const updateCommunityImage = async (file: File) => {
+    if (!user || !selectedCommunity) return;
+
+    setImageUploading(true);
+    try {
+      // Check if user is moderator/creator
+      const userCommunity = userCommunities.find(uc => uc.communityId === selectedCommunity.id);
+      const isCreator = selectedCommunity.creatorId === user.uid;
+      const isModerator = userCommunity?.role === 'admin' || isCreator;
+      
+      if (!isModerator) {
+        showToast('Only moderators can change the community picture', 'error');
+        return;
+      }
+
+      // Compress and upload image
+      showToast('Compressing and uploading image...', 'success');
+      const photoURL = await uploadImage(file);
+      
+      // Update community document
+      const communityRef = doc(db, 'communities', selectedCommunity.id);
+      await updateDoc(communityRef, {
+        photoURL: photoURL,
+        updatedAt: serverTimestamp()
+      });
+
+      // Update local state
+      setSelectedCommunity({ ...selectedCommunity, photoURL });
+      
+      // Refresh communities list
+      await loadCommunities();
+      
+      showToast('Community picture updated successfully!', 'success');
+      setShowImageUpload(false);
+    } catch (error) {
+      console.error('Error updating community image:', error);
+      showToast('Failed to update picture. Please try again.', 'error');
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const handleLeaveCommunity = async (communityId: string, communityName: string) => {
+    if (!user || leavingCommunity) return;
+
+    setLeavingCommunity(communityId);
+    try {
+      // Check if user is creator or admin
+      const communityRef = doc(db, 'communities', communityId);
+      const communitySnap = await getDoc(communityRef);
+      
+      if (communitySnap.exists()) {
+        const communityData = communitySnap.data();
+        
+        // If user is the creator, check if there are other admins
+        if (communityData.creatorId === user.uid) {
+          // Find other admins in the community
+          const userCommunitiesRef = collection(db, 'users');
+          const allUsersSnap = await getDocs(userCommunitiesRef);
+          
+          let otherAdmins = [];
+          for (const userDoc of allUsersSnap.docs) {
+            const userCommunitiesSubRef = collection(db, 'users', userDoc.id, 'communities');
+            const userCommunitiesSnap = await getDocs(userCommunitiesSubRef);
+            
+            const userCommunity = userCommunitiesSnap.docs.find(doc => 
+              doc.data().communityId === communityId && 
+              doc.data().role === 'admin' && 
+              userDoc.id !== user.uid
+            );
+            
+            if (userCommunity) {
+              otherAdmins.push(userDoc.id);
+            }
+          }
+          
+          if (otherAdmins.length === 0) {
+            // No other admins - promote the most recent member to admin
+            const allMembers = Object.keys(communityData.members || {}).filter(id => id !== user.uid);
+            
+            if (allMembers.length > 0) {
+              // Promote the first member to admin and transfer ownership
+              const newOwnerId = allMembers[0];
+              
+              // Update community creator
+              await updateDoc(communityRef, {
+                creatorId: newOwnerId
+              });
+              
+              // Update new owner's role to admin
+              const newOwnerCommunitiesRef = collection(db, 'users', newOwnerId, 'communities');
+              const newOwnerCommunitiesSnap = await getDocs(newOwnerCommunitiesRef);
+              const newOwnerCommunity = newOwnerCommunitiesSnap.docs.find(doc => doc.data().communityId === communityId);
+              
+              if (newOwnerCommunity) {
+                await updateDoc(doc(db, 'users', newOwnerId, 'communities', newOwnerCommunity.id), {
+                  role: 'admin'
+                });
+              }
+              
+              showToast(`Ownership transferred and you left "${communityName}"`, 'success');
+            } else {
+              // No other members - delete the community
+              showToast(`Community "${communityName}" was deleted as you were the only member`, 'success');
+            }
+          } else {
+            showToast(`Successfully left "${communityName}"`, 'success');
+          }
+        } else {
+          showToast(`Successfully left "${communityName}"`, 'success');
+        }
+        
+        // Remove user from community members
+        const currentMembers = communityData.members || {};
+        delete currentMembers[user.uid];
+        
+        await updateDoc(communityRef, {
+          members: currentMembers,
+          memberCount: Math.max(0, (communityData.memberCount || 1) - 1)
+        });
+      }
+
+      // Remove community from user's communities
+      const userCommunitiesRef = collection(db, 'users', user.uid, 'communities');
+      const userCommunitiesSnap = await getDocs(userCommunitiesRef);
+      
+      const communityToRemove = userCommunitiesSnap.docs.find(doc => doc.data().communityId === communityId);
+      if (communityToRemove) {
+        await deleteDoc(doc(db, 'users', user.uid, 'communities', communityToRemove.id));
+      }
+
+      await loadCommunities();
+      await loadUserCommunities(user.uid);
+    } catch (error) {
+      console.error('Error leaving community:', error);
+      showToast('Failed to leave mesh. Please try again.', 'error');
+    } finally {
+      setLeavingCommunity(null);
+    }
+  };
+
   const handleJoinCommunity = async (communityId: string, communityName: string) => {
-    if (!user) return;
+    if (!user) {
+      showToast('Please log in to join communities', 'error');
+      return;
+    }
+    
+
     
     setJoiningCommunity(communityId);
+    
     try {
       // Check if user is already a member
       const isAlreadyMember = userCommunities.some(uc => uc.communityId === communityId);
       if (isAlreadyMember) {
-        alert('You are already a member of this community!');
+        showToast('You are already a member of this mesh!', 'error');
+        setJoiningCommunity(null);
         return;
       }
 
-      // Get community details to check if it allows anonymous joining
+      // Check if user already has a pending join request
+      const joinRequestsRef = collection(db, 'joinRequests');
+      const existingRequestQuery = query(
+        joinRequestsRef,
+        where('userId', '==', user.uid),
+        where('communityId', '==', communityId),
+        where('status', '==', 'pending')
+      );
+      const existingRequestSnap = await getDocs(existingRequestQuery);
+      
+      if (!existingRequestSnap.empty) {
+        showToast('You already have a pending join request for this community', 'error');
+        setJoiningCommunity(null);
+        return;
+      }
+
+      // Get community details
       const communityRef = doc(db, 'communities', communityId);
       const communitySnap = await getDoc(communityRef);
       
       if (!communitySnap.exists()) {
-        alert('Community not found');
+        showToast('Mesh not found', 'error');
+        setJoiningCommunity(null);
         return;
       }
 
       const communityData = communitySnap.data();
       
-      // If community allows anonymous joining or is public, join directly
-      if (communityData.allowAnonymous || !communityData.isPrivate) {
-        // Add user to community
-        const userCommunityRef = collection(db, 'users', user.uid, 'communities');
-        await addDoc(userCommunityRef, {
-          communityId: communityId,
-          communityName: communityName,
-          role: 'member',
-          joinedAt: serverTimestamp()
-        });
+      // For private communities, always show enrollment questions
+      if (communityData.isPrivate) {
+        // Create default enrollment questions if none exist
+        const enrollmentQuestions = communityData.enrollmentQuestions && communityData.enrollmentQuestions.length > 0
+          ? communityData.enrollmentQuestions
+          : [{ 
+              id: 'default',
+              question: "Why do you want to join this community?", 
+              type: "text", 
+              required: true 
+            }];
+        
 
-        // Update community member count
-        await updateDoc(communityRef, {
-          memberCount: increment(1),
-          members: increment(1)
+        
+        // Show enrollment modal for private communities
+        setJoiningCommunityData({ 
+          id: communityId, 
+          name: communityName, 
+          ...communityData,
+          enrollmentQuestions: enrollmentQuestions
         });
-
-        alert('Successfully joined the community!');
-      } else {
-        // For private communities, send join request to moderator
-        try {
-          const { createJoinRequestNotification } = await import('@/components/NotificationSystem');
-          
-          // Get user profile for notification
-          const userRef = doc(db, 'users', user.uid);
-          const userSnap = await getDoc(userRef);
-          const userData = userSnap.exists() ? userSnap.data() : null;
-          const userName = userData?.username || user.email?.split('@')[0] || 'Someone';
-          
-          await createJoinRequestNotification(
-            communityData.creatorId,
-            user.uid,
-            userName,
-            communityName
-          );
-          
-          alert('Join request sent to community moderator!');
-        } catch (error) {
-          console.error('Error sending join request:', error);
-          alert('Failed to send join request. Please try again.');
-        }
+        setJoinAnswers({});
+        setShowJoinModal(true);
+        // Don't clear joiningCommunity here - keep button disabled until modal is closed
+        return;
       }
+
+      // Public community - join directly
+
+      
+      const userCommunityRef = collection(db, 'users', user.uid, 'communities');
+      await addDoc(userCommunityRef, {
+        communityId: communityId,
+        communityName: communityName,
+        role: 'member',
+        joinedAt: serverTimestamp()
+      });
+
+      // Get current community data to check storage format
+      const currentCommunitySnap = await getDoc(communityRef);
+      const currentCommunityData = currentCommunitySnap.data();
+      
+      // Update members in consistent format (using object with user IDs as keys)
+      await updateDoc(communityRef, {
+        memberCount: increment(1),
+        [`members.${user.uid}`]: {
+          joinedAt: serverTimestamp(),
+          role: 'member'
+        }
+      });
+
+      showToast('Successfully joined the mesh!', 'success');
+      await loadCommunities();
+      await loadUserCommunities(user.uid);
+      
     } catch (error) {
       console.error('Error joining community:', error);
-      alert('Failed to join community. Please try again.');
+      showToast('Failed to join mesh. Please try again.', 'error');
     } finally {
       setJoiningCommunity(null);
+    }
+  };
+
+  const submitJoinRequest = async (communityId: string, communityName: string, communityData: any, answers: {question: string, answer: string}[]) => {
+    if (!user) return;
+
+    setJoiningCommunity(communityId);
+    
+    try {
+      // Double-check no existing pending request
+      const joinRequestsRef = collection(db, 'joinRequests');
+      const existingRequestQuery = query(
+        joinRequestsRef,
+        where('userId', '==', user.uid),
+        where('communityId', '==', communityId),
+        where('status', '==', 'pending')
+      );
+      const existingRequestSnap = await getDocs(existingRequestQuery);
+      
+      if (!existingRequestSnap.empty) {
+        showToast('You already have a pending join request for this community', 'error');
+        setJoiningCommunity(null);
+        setShowJoinModal(false);
+        return;
+      }
+
+      // Get user profile for better display name
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+      const userData = userSnap.exists() ? userSnap.data() : {};
+      const displayName = userData.username || user.email?.split('@')[0] || 'Unknown User';
+
+      // Create join request
+      await addDoc(joinRequestsRef, {
+        userId: user.uid,
+        userName: displayName,
+        userEmail: user.email || '',
+        communityId: communityId,
+        communityName: communityName,
+        answers: answers,
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+
+      // Send notification to creator and all admins
+      const moderatorIds = [communityData.creatorId];
+      
+      // Add all admin members to the notification list
+      if (communityData.members) {
+        Object.keys(communityData.members).forEach(memberId => {
+          if (communityData.members[memberId]?.role === 'admin' && !moderatorIds.includes(memberId)) {
+            moderatorIds.push(memberId);
+          }
+        });
+      }
+
+      // Send notifications to all moderators (using Realtime DB for instant delivery)
+      for (const moderatorId of moderatorIds) {
+        try {
+          const notificationRef = ref(realtimeDb, `notifications/${moderatorId}/${Date.now()}`);
+          await set(notificationRef, {
+            type: 'join_request',
+            title: 'New Join Request',
+            message: `${displayName} wants to join "${communityName}"`,
+            timestamp: Date.now(),
+            read: false,
+            fromUserId: user.uid,
+            fromUserName: displayName,
+            data: {
+              communityId: communityId,
+              communityName: communityName
+            }
+          });
+        } catch (notificationError) {
+          console.error(`Failed to send notification to ${moderatorId}:`, notificationError);
+        }
+      }
+
+      showToast('Join request sent successfully! Please wait for moderator approval.', 'success');
+      setShowJoinModal(false);
+      setJoiningCommunityData(null);
+      setJoinAnswers({});
+      
+      // Refresh pending requests to update button state
+      if (user) {
+        await loadPendingRequests(user.uid);
+        await loadJoinRequestCounts(user.uid);
+      }
+    } catch (error) {
+      console.error('Error submitting join request:', error);
+      showToast('Failed to send join request. Please try again.', 'error');
+    } finally {
+      setJoiningCommunity(null);
+    }
+  };
+
+  const createJoinRequestNotification = async (userId: string, notification: any) => {
+    try {
+      const notificationRef = ref(realtimeDb, `notifications/${userId}/${Date.now()}`);
+      await set(notificationRef, notification);
+    } catch (error) {
+      console.error('Error creating notification:', error);
     }
   };
 
@@ -466,8 +828,7 @@ export default function CommunitiesPage() {
       const postsRef = collection(db, 'posts');
       const q = query(
         postsRef,
-        where('communityId', '==', community.id),
-        orderBy('createdAt', 'desc')
+        where('communityId', '==', community.id)
       );
       
       const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -475,6 +836,14 @@ export default function CommunitiesPage() {
           id: doc.id,
           ...doc.data()
         }));
+        
+        // Sort manually by createdAt since we can't use orderBy with where on different fields
+        posts.sort((a, b) => {
+          const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+          const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+          return bTime - aTime; // Descending order
+        });
+        
         setCommunityPosts(posts);
       });
 
@@ -557,7 +926,7 @@ export default function CommunitiesPage() {
 
         {/* User's Communities */}
         {userCommunities.length > 0 && (
-          <div className="px-4 py-4 pt-12">
+          <div className="px-4 py-4 pt-8">
             <h2 className="text-sm font-semibold text-gray-700 mb-3">My Communities</h2>
             <div className="flex space-x-3 overflow-x-auto scrollbar-hide">
               {userCommunities.map((userCommunity) => {
@@ -569,7 +938,7 @@ export default function CommunitiesPage() {
                     key={userCommunity.communityId}
                     onClick={() => {
                       setSelectedCommunity(community);
-                      setShowCommunity(true);
+                      setShowCommunityProfile(true);
                     }}
                     className="flex-shrink-0 w-20 text-center cursor-pointer"
                   >
@@ -593,7 +962,7 @@ export default function CommunitiesPage() {
         )}
 
         {/* Mobile Content */}
-        <div className="px-4 py-6 pt-12">
+        <div className="px-4 py-6">
           {/* Search Field */}
           <div className="mb-6">
             <fieldset className="relative">
@@ -649,7 +1018,7 @@ export default function CommunitiesPage() {
                 onClick={() => setShowCreateModal(true)}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
               >
-                Create Community
+                Create Mesh
               </button>
             </div>
           ) : (
@@ -708,11 +1077,34 @@ export default function CommunitiesPage() {
                     </div>
                   </div>
                   
-                  {/* Join Button */}
+                  {/* Join/Member/Moderate Buttons */}
                   <div className="mt-3 flex justify-end">
                     {userCommunities.some(uc => uc.communityId === community.id) ? (
-                      <span className="px-3 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                        Member
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full whitespace-nowrap">
+                          Member
+                        </span>
+                        {/* Show moderate button if user is admin/creator */}
+                        {(community.creatorId === user?.uid || userCommunities.find(uc => uc.communityId === community.id)?.role === 'admin') && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/community/${community.id}/moderate`);
+                            }}
+                            className="relative px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-lg hover:bg-purple-200 font-medium transition-all duration-200 whitespace-nowrap"
+                          >
+                            Moderate
+                            {joinRequestCounts[community.id] > 0 && (
+                              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
+                                {joinRequestCounts[community.id]}
+                              </span>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    ) : pendingRequests.includes(community.id) ? (
+                      <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full whitespace-nowrap">
+                        Request Sent
                       </span>
                     ) : (
                       <button
@@ -721,7 +1113,7 @@ export default function CommunitiesPage() {
                           handleJoinCommunity(community.id, community.name);
                         }}
                         disabled={joiningCommunity === community.id}
-                        className="px-3 py-1 bg-blue-600 text-white text-xs rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-3 py-1 bg-blue-600 text-white text-xs rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                       >
                         {joiningCommunity === community.id ? 'Joining...' : 'Join'}
                       </button>
@@ -740,7 +1132,7 @@ export default function CommunitiesPage() {
       <div className="hidden lg:block">
 
         {/* Desktop Content */}
-        <div className="max-w-7xl mx-auto px-6 py-8 pt-16">
+        <div className="max-w-7xl mx-auto px-6 py-8 pt-8">
           <div className="grid grid-cols-12 gap-8">
             {/* Left Sidebar */}
             <div className="col-span-3">
@@ -750,7 +1142,7 @@ export default function CommunitiesPage() {
                   <button
                     onClick={() => setShowCreateModal(true)}
                     className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition-colors"
-                    title="Create Community"
+                    title="Create Mesh"
                   >
                     <PlusIcon className="h-4 w-4" />
                   </button>
@@ -814,7 +1206,7 @@ export default function CommunitiesPage() {
                     className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center space-x-2 whitespace-nowrap"
                   >
                     <PlusIcon className="h-5 w-5" />
-                    <span>Create Community</span>
+                    <span>Create Mesh</span>
                   </button>
                 </div>
                 {filteredCommunities.length === 0 ? (
@@ -828,85 +1220,123 @@ export default function CommunitiesPage() {
                       onClick={() => setShowCreateModal(true)}
                       className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
                     >
-                      Create Community
+                      Create Mesh
                     </button>
                   </div>
                 ) : (
-                  <div className="grid gap-6">
-                    {filteredCommunities.map((community) => (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredCommunities.map((community, index) => (
                       <div
                         key={community.id}
                         onClick={() => handleCommunityClick(community)}
-                        className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
+                        className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 cursor-pointer bg-white hover:scale-[1.02] hover:border-blue-300 h-full"
                       >
-                        <div className="flex items-start space-x-4 mb-4">
-                          <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
-                            {community.photoURL ? (
-                              <img src={community.photoURL} alt={community.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full bg-blue-100 flex items-center justify-center">
-                                <span className="text-xl font-bold text-blue-600">
-                                  {community.name.charAt(0).toUpperCase()}
-                                </span>
+                        <div className="flex flex-col h-full">
+                          <div className="flex items-start space-x-4 mb-4">
+                            <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-blue-100">
+                              {community.photoURL ? (
+                                <img src={community.photoURL} alt={community.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
+                                  <span className="text-lg font-bold text-blue-600">
+                                    {community.name.charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between mb-2">
+                                <h3 className="text-lg font-semibold text-gray-900 truncate">{community.name}</h3>
+                                <div className="flex items-center space-x-1 ml-2">
+                                  <span className={`px-2 py-1 rounded-full text-xs ${getCategoryColor(community.category)}`}>
+                                    {community.category}
+                                  </span>
+                                  {community.isPrivate ? (
+                                    <LockClosedIcon className="h-4 w-4 text-gray-400" />
+                                  ) : (
+                                    <GlobeAltIcon className="h-4 w-4 text-gray-400" />
+                                  )}
+                                </div>
                               </div>
-                            )}
+                              <p className="text-xs text-gray-500">
+                                <span className="hidden sm:inline">Created by </span>
+                                <span className="sm:hidden">By </span>
+                                {community.creatorUsername}
+                              </p>
+                            </div>
                           </div>
-                          <div className="flex-1">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <h3 className="text-xl font-semibold text-gray-900">{community.name}</h3>
-                                <p className="text-sm text-gray-500">Created by {community.creatorUsername}</p>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <span className={`px-3 py-1 rounded-full text-sm ${getCategoryColor(community.category)}`}>
-                                  {community.category}
-                                </span>
-                                {community.isPrivate ? (
-                                  <LockClosedIcon className="h-5 w-5 text-gray-400" />
-                                ) : (
-                                  <GlobeAltIcon className="h-5 w-5 text-gray-400" />
+                          <p className="text-gray-600 text-sm mb-4 line-clamp-3 flex-1">{community.description}</p>
+                          <div className="mt-auto">
+                            <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
+                              <div className="flex items-center space-x-3">
+                                <span>👥 {community.memberCount} members</span>
+                                {community.submesses?.length > 0 && (
+                                  <span>🏷️ {community.submesses.length} submeshes</span>
                                 )}
                               </div>
                             </div>
-                          </div>
-                        </div>
-                        <p className="text-gray-600 mb-4">{community.description}</p>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-4">
-                            <span className="text-sm text-gray-500">{community.memberCount} members</span>
-                            {community.university && (
-                              <span className="text-sm text-gray-500">• {community.university}</span>
-                            )}
-                            {community.courseCode && (
-                              <span className="text-sm text-gray-500">• {community.courseCode}</span>
-                            )}
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="flex space-x-2">
-                              {community.tags.map((tag, index) => (
-                                <span key={index} className="px-3 py-1 bg-gray-100 text-gray-600 text-sm rounded-full">
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
                             
-                            {/* Join Button */}
-                            {userCommunities.some(uc => uc.communityId === community.id) ? (
-                              <span className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full">
-                                Member
-                              </span>
-                            ) : (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleJoinCommunity(community.id, community.name);
-                                }}
-                                disabled={joiningCommunity === community.id}
-                                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                {joiningCommunity === community.id ? 'Joining...' : 'Join'}
-                              </button>
-                            )}
+                            <div className="flex items-center justify-between">
+                              <div className="flex flex-wrap gap-1">
+                                {community.tags.slice(0, 2).map((tag, index) => (
+                                  <span key={index} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                    {tag}
+                                  </span>
+                                ))}
+                                {community.tags.length > 2 && (
+                                  <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                    +{community.tags.length - 2}
+                                  </span>
+                                )}
+                              </div>
+                              
+                              {/* Join/Leave/Moderate Buttons */}
+                              {userCommunities.some(uc => uc.communityId === community.id) ? (
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-medium whitespace-nowrap">
+                                    ✓ Member
+                                  </span>
+                                  {/* Show moderate button if user is admin/creator */}
+                                  {(community.creatorId === user?.uid || userCommunities.find(uc => uc.communityId === community.id)?.role === 'admin') && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        router.push(`/community/${community.id}/moderate`);
+                                      }}
+                                      className="relative px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-lg hover:bg-purple-200 font-medium transition-all duration-200 whitespace-nowrap"
+                                    >
+                                      Moderate
+                                      {joinRequestCounts[community.id] > 0 && (
+                                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
+                                          {joinRequestCounts[community.id]}
+                                        </span>
+                                      )}
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleLeaveCommunity(community.id, community.name);
+                                    }}
+                                    disabled={leavingCommunity === community.id}
+                                    className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-lg hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all duration-200 whitespace-nowrap"
+                                  >
+                                    {leavingCommunity === community.id ? 'Leaving...' : 'Leave'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleJoinCommunity(community.id, community.name);
+                                  }}
+                                  disabled={joiningCommunity === community.id}
+                                  className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all duration-200 hover:scale-105 whitespace-nowrap"
+                                >
+                                  {joiningCommunity === community.id ? 'Joining...' : 'Join'}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -919,13 +1349,13 @@ export default function CommunitiesPage() {
         </div>
       </div>
 
-      {/* Create Community Modal */}
+      {/* Create Mesh Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">CREATE COMMUNITY</h2>
+                <h2 className="text-xl font-semibold text-gray-900">CREATE MESH</h2>
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={() => {
@@ -1066,7 +1496,7 @@ export default function CommunitiesPage() {
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                       />
                       <label htmlFor="private" className="ml-2 block text-sm text-gray-700">
-                        Private community (invite-only)
+                        Private mesh (invite-only)
                       </label>
                     </div>
                     <div className="flex items-center">
@@ -1299,7 +1729,7 @@ export default function CommunitiesPage() {
                         <span>{uploadProgress || 'Creating...'}</span>
                       </div>
                     ) : (
-                      'Create Community'
+                      'Create Mesh'
                     )}
                   </button>
                   
@@ -1327,12 +1757,12 @@ export default function CommunitiesPage() {
 
       {/* Community Profile View */}
       {showCommunityProfile && selectedCommunity && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl w-full max-w-6xl h-[90vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b">
               <div className="flex items-center space-x-4">
-                <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 group">
                   {selectedCommunity.photoURL ? (
                     <img src={selectedCommunity.photoURL} alt={selectedCommunity.name} className="w-full h-full object-cover" />
                   ) : (
@@ -1342,10 +1772,27 @@ export default function CommunitiesPage() {
                       </span>
                     </div>
                   )}
+                  {/* Moderator camera overlay */}
+                  {(selectedCommunity.creatorId === user?.uid || 
+                    userCommunities.find(uc => uc.communityId === selectedCommunity.id)?.role === 'admin') && (
+                    <button
+                      onClick={() => setShowImageUpload(true)}
+                      className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center"
+                    >
+                      <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900">{selectedCommunity.name}</h2>
-                  <p className="text-sm text-gray-500">Created by {selectedCommunity.creatorUsername}</p>
+                  <p className="text-sm text-gray-500">
+                  <span className="hidden sm:inline">Created by </span>
+                  <span className="sm:hidden">By </span>
+                  {selectedCommunity.creatorUsername}
+                </p>
                   <div className="flex items-center space-x-2 mt-1">
                     <span className={`px-3 py-1 rounded-full text-sm ${getCategoryColor(selectedCommunity.category)}`}>
                       {selectedCommunity.category}
@@ -1361,10 +1808,11 @@ export default function CommunitiesPage() {
               <div className="flex items-center space-x-3">
                 <button
                   onClick={() => setShowCreatePostModal(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+                  className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+                  title="New Post"
                 >
                   <PlusIcon className="h-4 w-4" />
-                  <span>New Post</span>
+                  <span className="hidden sm:inline">New Post</span>
                 </button>
                 <button
                   onClick={() => {
@@ -1386,17 +1834,17 @@ export default function CommunitiesPage() {
               <div className="p-6 border-b border-gray-200">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* About */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">About</h3>
-                    <p className="text-gray-600 text-sm">{selectedCommunity.description}</p>
-                    <div className="mt-3 space-y-1 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Members:</span>
-                        <span className="font-medium">{selectedCommunity.memberCount}</span>
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 hover:scale-[1.02] transition-transform duration-200">
+                    <h3 className="text-lg font-semibold text-blue-900 mb-3">About</h3>
+                    <p className="text-blue-700 text-sm leading-relaxed">{selectedCommunity.description}</p>
+                    <div className="mt-4 space-y-2 text-sm">
+                      <div className="flex justify-between items-center bg-white/50 rounded-lg p-2">
+                        <span className="text-blue-600 font-medium">Members:</span>
+                        <span className="font-bold text-blue-800">{selectedCommunity.memberCount}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Creator:</span>
-                        <span className="font-medium">{selectedCommunity.creatorUsername}</span>
+                      <div className="flex justify-between items-center bg-white/50 rounded-lg p-2">
+                        <span className="text-blue-600 font-medium">Creator:</span>
+                        <span className="font-bold text-blue-800">{selectedCommunity.creatorUsername}</span>
                       </div>
                     </div>
                   </div>
@@ -1516,9 +1964,10 @@ export default function CommunitiesPage() {
                               e.stopPropagation();
                               // Chat functionality
                             }}
-                            className="flex items-center px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                            className="flex items-center p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Start Chat"
                           >
-                            Chat
+                            <PaperAirplaneIcon className="h-4 w-4" />
                           </button>
                         </div>
                       </div>
@@ -1564,6 +2013,186 @@ export default function CommunitiesPage() {
           }}
         />
       )}
+
+      {/* Image Upload Modal */}
+      {showImageUpload && selectedCommunity && (
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Change Community Picture</h3>
+              <button
+                onClick={() => setShowImageUpload(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="text-sm text-gray-600">
+                Select a new image for {selectedCommunity.name}. The image will be automatically compressed and optimized.
+              </div>
+              
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+                <div className="space-y-2">
+                  <svg className="h-12 w-12 text-gray-400 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <div className="text-sm text-gray-600">
+                    <label htmlFor="community-image" className="cursor-pointer text-blue-600 hover:text-blue-700 font-medium">
+                      Click to upload
+                    </label>
+                    <span> or drag and drop</span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    PNG, JPG, GIF up to 5MB
+                  </div>
+                </div>
+                <input
+                  id="community-image"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      // Validate file size (5MB limit)
+                      if (file.size > 5 * 1024 * 1024) {
+                        showToast('Image size must be less than 5MB. Please choose a smaller image.', 'error');
+                        e.target.value = '';
+                        return;
+                      }
+
+                      // Validate file type
+                      if (!file.type.startsWith('image/')) {
+                        showToast('Please select a valid image file.', 'error');
+                        e.target.value = '';
+                        return;
+                      }
+
+                      updateCommunityImage(file);
+                    }
+                  }}
+                />
+              </div>
+              
+              {imageUploading && (
+                <div className="flex items-center justify-center space-x-2 text-blue-600">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <span className="text-sm">Uploading and compressing image...</span>
+                </div>
+              )}
+              
+              <div className="flex items-center justify-end space-x-3 pt-4 border-t">
+                <button
+                  onClick={() => setShowImageUpload(false)}
+                  className="px-4 py-2 text-gray-700 hover:text-gray-900 transition-colors"
+                  disabled={imageUploading}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Join Questions Modal */}
+      {showJoinModal && joiningCommunityData && (
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">Join {joiningCommunityData.name}</h2>
+                <button
+                  onClick={() => {
+                    setShowJoinModal(false);
+                    setJoiningCommunityData(null);
+                    setJoinAnswers({});
+                    setJoiningCommunity(null);
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              <div className="mb-6">
+                <p className="text-gray-600">
+                  Please answer the following questions to join this private mesh. Your answers will be reviewed by the moderators.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {joiningCommunityData.enrollmentQuestions?.map((question: any, index: number) => (
+                  <div key={question.id || index}>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {question.question}
+                      {question.required && <span className="text-red-500 ml-1">*</span>}
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={joinAnswers[question.question] || ''}
+                      onChange={(e) => setJoinAnswers({ ...joinAnswers, [question.question]: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                      placeholder={`Enter your answer${question.required ? ' (required)' : ' (optional)'}`}
+                      required={question.required}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-end space-x-3 pt-6 border-t mt-6">
+                <button
+                  onClick={() => {
+                    setShowJoinModal(false);
+                    setJoiningCommunityData(null);
+                    setJoinAnswers({});
+                  }}
+                  className="px-4 py-2 text-gray-700 hover:text-gray-900 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    // Validate required questions
+                    const requiredQuestions = joiningCommunityData.enrollmentQuestions?.filter((q: any) => q.required) || [];
+                    const missingAnswers = requiredQuestions.filter((q: any) => !joinAnswers[q.question]?.trim());
+                    
+                    if (missingAnswers.length > 0) {
+                      showToast('Please answer all required questions', 'error');
+                      return;
+                    }
+
+                    // Prepare answers array
+                    const answers = joiningCommunityData.enrollmentQuestions?.map((q: any) => ({
+                      question: q.question,
+                      answer: joinAnswers[q.question] || ''
+                    })) || [];
+
+                    console.log('Prepared answers:', answers);
+                    submitJoinRequest(joiningCommunityData.id, joiningCommunityData.name, joiningCommunityData, answers);
+                  }}
+                  disabled={joiningCommunity === joiningCommunityData.id}
+                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {joiningCommunity === joiningCommunityData.id ? 'Submitting...' : 'Submit Request'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={hideToast}
+      />
     </div>
   );
 }
@@ -1584,9 +2213,10 @@ function PostCommentsButton({ postId, onClick }: { postId: string; onClick: (e: 
     <button
       onClick={onClick}
       className="flex items-center text-gray-600 hover:text-blue-600 transition-colors text-sm"
+      title={`${commentCount} comments`}
     >
-      <ChatBubbleLeftIcon className="h-4 w-4 mr-1" />
-      Comments ({commentCount})
+      <ChatBubbleLeftIcon className="h-4 w-4" />
+      <span className="ml-1">{commentCount}</span>
     </button>
   );
 }
@@ -1697,7 +2327,7 @@ function PostModal({ post, onClose }: PostModalProps) {
                 className="flex items-center text-gray-600 hover:text-blue-600 transition-colors"
               >
                 <ChatBubbleLeftIcon className="h-4 w-4 mr-1" />
-                Comment
+                Chat
               </button>
               <span className="text-gray-500 text-sm">
                 {comments.length} {comments.length === 1 ? 'comment' : 'comments'}

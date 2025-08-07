@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, increment, getDoc, where, setDoc, getDocs, deleteDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { PlusIcon, CheckCircleIcon, XCircleIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, CheckCircleIcon, XCircleIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, QuestionMarkCircleIcon } from "@heroicons/react/24/outline";
 import Toast from "@/components/Toast";
 
 import Comment from "@/components/Comment";
@@ -82,7 +82,37 @@ export default function DashboardPage() {
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCommunityFilter, setSelectedCommunityFilter] = useState<string>('all');
+  const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set());
+  const [showAllPosts, setShowAllPosts] = useState(false);
+  const INITIAL_POSTS_COUNT = 6;
+  const [commentCounts, setCommentCounts] = useState<{[postId: string]: number}>({});
+  const [showScrollToTop, setShowScrollToTop] = useState(false);
+  const [suggestedCommunities, setSuggestedCommunities] = useState<any[]>([]);
+  const [joiningCommunity, setJoiningCommunity] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   const router = useRouter();
+
+  const loadCommentCounts = async (posts: Post[]) => {
+    try {
+      const counts: {[postId: string]: number} = {};
+      
+      // Load comment counts for all posts
+      await Promise.all(posts.map(async (post) => {
+        try {
+          const commentsRef = collection(db, 'posts', post.id, 'comments');
+          const commentsSnapshot = await getDocs(commentsRef);
+          counts[post.id] = commentsSnapshot.size;
+        } catch (error) {
+          console.error('Error loading comment count for post:', post.id, error);
+          counts[post.id] = 0;
+        }
+      }));
+      
+      setCommentCounts(counts);
+    } catch (error) {
+      console.error('Error loading comment counts:', error);
+    }
+  };
 
   const loadUserProfile = async (userId: string) => {
     try {
@@ -149,6 +179,118 @@ export default function DashboardPage() {
     }
   };
 
+  const isNewUser = (userProfile: any): boolean => {
+    if (!userProfile?.joinDate) return false;
+    
+    const joinDate = userProfile.joinDate.toDate ? userProfile.joinDate.toDate() : new Date(userProfile.joinDate);
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    return joinDate > thirtyDaysAgo;
+  };
+
+  const loadSuggestedCommunities = async () => {
+    if (!user) return;
+    
+    try {
+      // Get all public communities
+      const communitiesRef = collection(db, 'communities');
+      const q = query(communitiesRef, where('isPrivate', '==', false));
+      const snapshot = await getDocs(q);
+      
+      // Get user's current community IDs
+      const userCommunityIds = new Set(userCommunities.map(uc => uc.communityId));
+      
+      // Filter out communities user is already a member of
+      const suggestions = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(community => !userCommunityIds.has(community.id))
+        .slice(0, 3); // Show top 3 suggestions
+        
+      setSuggestedCommunities(suggestions);
+    } catch (error) {
+      console.error('Error loading suggested communities:', error);
+    }
+  };
+
+  // Filter private community posts to only show to members
+  const filterPrivateCommunityPosts = async (posts: Post[]): Promise<Post[]> => {
+    if (!user) return posts.filter(post => !post.communityId); // Show only non-community posts if not logged in
+    
+    try {
+      // Get user's communities
+      const userCommunitiesRef = collection(db, 'users', user.uid, 'communities');
+      const userCommunitiesSnap = await getDocs(userCommunitiesRef);
+      const userCommunityIds = new Set(userCommunitiesSnap.docs.map(doc => doc.data().communityId));
+      
+      // Get all communities to check which are private
+      const communitiesRef = collection(db, 'communities');
+      const communitiesSnap = await getDocs(communitiesRef);
+      const privateCommunityIds = new Set();
+      
+      communitiesSnap.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.isPrivate) {
+          privateCommunityIds.add(doc.id);
+        }
+      });
+      
+      // Filter posts: allow all non-community posts and public community posts, 
+      // only allow private community posts if user is a member
+      return posts.filter(post => {
+        if (!post.communityId) return true; // Non-community posts are always visible
+        if (!privateCommunityIds.has(post.communityId)) return true; // Public community posts are always visible
+        return userCommunityIds.has(post.communityId); // Private community posts only if user is member
+      });
+    } catch (error) {
+      console.error('Error filtering private community posts:', error);
+      return posts; // Return all posts if filtering fails
+    }
+  };
+
+  const joinCommunity = async (communityId: string, communityName: string) => {
+    if (!user || joiningCommunity) return;
+    
+    setJoiningCommunity(communityId);
+    try {
+      // Add user to community members
+      const communityRef = doc(db, 'communities', communityId);
+      const communitySnap = await getDoc(communityRef);
+      
+      if (communitySnap.exists()) {
+        const communityData = communitySnap.data();
+        const currentMembers = communityData.members || {};
+        currentMembers[user.uid] = true;
+        
+        await updateDoc(communityRef, {
+          members: currentMembers,
+          memberCount: increment(1)
+        });
+        
+        // Add community to user's communities
+        const userCommunityRef = doc(db, 'users', user.uid, 'communities', communityId);
+        await setDoc(userCommunityRef, {
+          communityId: communityId,
+          communityName: communityName,
+          role: 'member',
+          joinedAt: serverTimestamp()
+        });
+        
+        showToast(`Successfully joined ${communityName}!`, 'success');
+        
+        // Refresh suggestions
+        setTimeout(() => {
+          loadSuggestedCommunities();
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('Error joining community:', error);
+      showToast('Failed to join mesh. Please try again.', 'error');
+    } finally {
+      setJoiningCommunity(null);
+    }
+  };
+
   const loadPosts = () => {
     console.log('=== LOADING POSTS START ===');
     console.log('Firebase db object:', db);
@@ -161,7 +303,7 @@ export default function DashboardPage() {
       const q = query(postsRef);
       console.log('Query created:', q);
 
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      const unsubscribe = onSnapshot(q, async (snapshot) => {
         console.log('=== POSTS SNAPSHOT RECEIVED ===');
         console.log('Snapshot empty:', snapshot.empty);
         console.log('Number of documents:', snapshot.docs.length);
@@ -219,7 +361,94 @@ export default function DashboardPage() {
         });
 
         console.log('Final converted posts:', convertedPosts);
-        setPosts(convertedPosts);
+        
+        // For new users, prioritize posts from non-private communities with high engagement
+        if (userProfile && isNewUser(userProfile)) {
+          console.log('New user detected, prioritizing engaging posts from public communities');
+          
+          try {
+            // Load community data to filter non-private posts
+            const communitiesRef = collection(db, 'communities');
+            const communitiesSnapshot = await getDocs(communitiesRef);
+            const publicCommunityIds = new Set();
+            
+            communitiesSnapshot.docs.forEach(doc => {
+              const data = doc.data();
+              if (!data.isPrivate) {
+                publicCommunityIds.add(doc.id);
+              }
+            });
+            
+            // Separate posts into public community posts and general posts
+            const publicCommunityPosts = convertedPosts.filter(post => 
+              post.communityId && publicCommunityIds.has(post.communityId)
+            );
+            const generalPosts = convertedPosts.filter(post => !post.communityId);
+            const privateCommunityPosts = convertedPosts.filter(post => 
+              post.communityId && !publicCommunityIds.has(post.communityId)
+            );
+            
+            // Load comment counts for sorting by engagement
+            const postsWithCounts = await Promise.all(convertedPosts.map(async (post) => {
+              try {
+                const commentsRef = collection(db, 'posts', post.id, 'comments');
+                const commentsSnapshot = await getDocs(commentsRef);
+                return { ...post, commentCount: commentsSnapshot.size };
+              } catch (error) {
+                return { ...post, commentCount: 0 };
+              }
+            }));
+            
+            // Sort public community posts by engagement (comment count) descending
+            const sortedPublicPosts = postsWithCounts
+              .filter(post => post.communityId && publicCommunityIds.has(post.communityId))
+              .sort((a, b) => b.commentCount - a.commentCount);
+            
+            const sortedGeneralPosts = postsWithCounts
+              .filter(post => !post.communityId)
+              .sort((a, b) => b.commentCount - a.commentCount);
+            
+            const sortedPrivatePosts = postsWithCounts
+              .filter(post => post.communityId && !publicCommunityIds.has(post.communityId))
+              .sort((a, b) => {
+                const aTime = new Date(a.postedAt).getTime();
+                const bTime = new Date(b.postedAt).getTime();
+                return bTime - aTime; // Recent first for private posts
+              });
+            
+            // Combine: high-engagement public posts first, then general posts, then private posts
+            const prioritizedPosts = [
+              ...sortedPublicPosts.slice(0, Math.max(3, Math.floor(sortedPublicPosts.length * 0.6))),
+              ...sortedGeneralPosts.slice(0, Math.max(2, Math.floor(sortedGeneralPosts.length * 0.4))),
+              ...sortedPrivatePosts
+            ];
+            
+            console.log('Prioritized posts for new user:', prioritizedPosts.length);
+            setPosts(prioritizedPosts.map(({ commentCount, ...post }) => post)); // Remove commentCount before setting
+            
+            // Set comment counts
+            const counts: {[postId: string]: number} = {};
+            postsWithCounts.forEach(post => {
+              counts[post.id] = post.commentCount;
+            });
+            setCommentCounts(counts);
+            
+          } catch (error) {
+            console.error('Error prioritizing posts for new user:', error);
+            // Fallback to regular posts
+            setPosts(convertedPosts);
+            if (convertedPosts.length > 0) {
+              loadCommentCounts(convertedPosts);
+            }
+          }
+        } else {
+          // Regular user - show posts in chronological order
+          setPosts(convertedPosts);
+          if (convertedPosts.length > 0) {
+            loadCommentCounts(convertedPosts);
+          }
+        }
+        
         console.log('=== LOADING POSTS END ===');
       }, (error) => {
         console.error('=== ERROR LOADING POSTS ===');
@@ -365,9 +594,9 @@ export default function DashboardPage() {
   const deleteAllTestData = async () => {
     if (!user) return;
     
-    if (!confirm('This will delete ALL posts and communities. Are you sure?')) {
-      return;
-    }
+    // For now, let's disable this dangerous operation
+    showToast('Data deletion disabled for safety. Contact admin if needed.', 'error');
+    return;
     
     try {
       // Delete all posts
@@ -394,10 +623,10 @@ export default function DashboardPage() {
         await deleteDoc(doc.ref);
       }
       
-      alert('All test data deleted successfully!');
+      showToast('All test data deleted successfully!', 'success');
     } catch (error) {
       console.error('Error deleting test data:', error);
-      alert('Error deleting test data. Please try again.');
+      showToast('Error deleting test data. Please try again.', 'error');
     }
   };
 
@@ -513,6 +742,23 @@ export default function DashboardPage() {
     }
   }, [communityFilters, communitySubmesses, posts, activeTab]);
 
+  // Handle scroll for go-to-top button
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollToTop(window.scrollY > 400);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Load suggested communities when user communities change
+  useEffect(() => {
+    if (user && userCommunities.length >= 0) {
+      loadSuggestedCommunities();
+    }
+  }, [user, userCommunities]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar userProfile={userProfile} />
@@ -521,7 +767,7 @@ export default function DashboardPage() {
       <div className="lg:hidden">
 
         {/* Mobile Content */}
-        <div className="px-4 py-6 pt-12">
+        <div className="px-4 py-6 pt-8">
           {/* Search Posts - Mobile */}
           <div className="bg-white rounded-xl shadow-sm border p-4 mb-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-3">Search Posts</h3>
@@ -628,7 +874,7 @@ export default function DashboardPage() {
 
 
           {/* Posts */}
-          <div className="space-y-4">
+          <div>
             {filteredPosts.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-gray-400 mb-4">
@@ -648,68 +894,116 @@ export default function DashboardPage() {
                 </button>
               </div>
             ) : (
-              filteredPosts.map((post) => (
-                <div 
-                  key={post.id} 
-                  className="bg-white rounded-lg p-4 border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => {
-                    setSelectedPost(post);
-                    setShowComments(true);
-                  }}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-gray-900">{post.postedBy}</span>
-                      <RepBadge score={0} size="sm" />
-                      {post.communityName && (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(showAllPosts ? filteredPosts : filteredPosts.slice(0, INITIAL_POSTS_COUNT)).map((post, index) => {
+                  const isExpanded = expandedPosts.has(post.id);
+                  const shouldTruncate = post.description.length > 120;
+                  const displayText = shouldTruncate && !isExpanded 
+                    ? post.description.substring(0, 120) + '...' 
+                    : post.description;
+                  
+                  return (
+                    <div 
+                      key={post.id} 
+                      className="bg-white rounded-xl shadow-sm border p-4 cursor-pointer hover:shadow-lg transition-all duration-300 flex flex-col h-full hover:scale-[1.02]"
+                      onClick={() => {
+                        router.push(`/post/${post.id}`);
+                      }}
+                    >
+                      {/* Header */}
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center space-x-2 flex-wrap gap-1">
+                          <span className="font-medium text-gray-900 text-sm">{post.postedBy}</span>
+                          <RepBadge score={0} size="sm" />
+                          {post.communityName && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/community/${post.communityId || ''}`);
+                              }}
+                              className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full hover:bg-blue-200 transition-colors"
+                            >
+                              {post.communityName}
+                            </button>
+                          )}
+                          {post.submessName && (
+                            <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                              {post.submessName}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-gray-400 shrink-0">
+                          {formatTimeAgo(new Date(post.postedAt))}
+                        </span>
+                      </div>
+                      
+                      {/* Content */}
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-gray-900 mb-2 text-base leading-tight">{post.title}</h3>
+                        <div className="text-gray-600 text-sm leading-relaxed">
+                          <p>{displayText}</p>
+                          {shouldTruncate && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedPosts(prev => {
+                                  const newSet = new Set(prev);
+                                  if (isExpanded) {
+                                    newSet.delete(post.id);
+                                  } else {
+                                    newSet.add(post.id);
+                                  }
+                                  return newSet;
+                                });
+                              }}
+                              className="text-blue-600 hover:text-blue-700 text-xs mt-1 font-medium"
+                            >
+                              {isExpanded ? 'Show less' : 'Show more'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Actions */}
+                      <div className="flex space-x-2 mt-4 pt-3 border-t border-gray-100">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            router.push(`/community/${post.communityId || ''}`);
+                            router.push(`/post/${post.id}`);
                           }}
-                          className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full hover:bg-blue-200 transition-colors"
+                          className="flex-1 flex items-center justify-center px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-xs"
                         >
-                          {post.communityName}
+                          <ChatBubbleLeftIcon className="h-3 w-3 mr-1" />
+                          Comments ({commentCounts[post.id] || 0})
                         </button>
-                      )}
-                      {post.submessName && (
-                        <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                          {post.submessName}
-                        </span>
-                      )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const chatId = [user?.uid, post.userId].sort().join('_');
+                            router.push(`/chat/${chatId}`);
+                          }}
+                          className="flex-1 flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
+                        >
+                          <ChatBubbleLeftIcon className="h-3 w-3 mr-1" />
+                          Chat
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-xs text-gray-400">
-                      {formatTimeAgo(new Date(post.postedAt))}
-                    </span>
-                  </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">{post.title}</h3>
-                  <p className="text-sm text-gray-600 mb-4 line-clamp-3">{post.description}</p>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedPost(post);
-                        setShowComments(true);
-                      }}
-                      className="flex-1 flex items-center justify-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md text-sm hover:bg-gray-200 transition-colors"
-                    >
-                      <ChatBubbleLeftIcon className="h-4 w-4 mr-1" />
-                      Comments (0)
-                    </button>
-                    <button
-                      onClick={() => {
-                        // Navigate to chat page with the post author
-                        const chatId = [user?.uid, post.userId].sort().join('_');
-                        router.push(`/chat/${chatId}`);
-                      }}
-                      className="flex-1 flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors"
-                    >
-                      <ChatBubbleLeftIcon className="h-4 w-4 mr-1" />
-                      Chat
-                    </button>
-                  </div>
+                  );
+                  })}
                 </div>
-              ))
+                {!showAllPosts && filteredPosts.length > INITIAL_POSTS_COUNT && (
+                  <div className="text-center mt-4">
+                    <button
+                      onClick={() => setShowAllPosts(true)}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    >
+                      Show More ({filteredPosts.length - INITIAL_POSTS_COUNT} more posts)
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -721,7 +1015,7 @@ export default function DashboardPage() {
       <div className="hidden lg:block">
 
         {/* Desktop Content - Modified Layout */}
-        <div className="max-w-7xl mx-auto px-6 py-8 pt-16">
+        <div className="max-w-7xl mx-auto px-6 py-8 pt-8">
           <div className="grid grid-cols-3 gap-8">
             {/* Left Column - Filter Controls */}
             <div className="space-y-6">
@@ -763,7 +1057,7 @@ export default function DashboardPage() {
                       <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                         <PlusIcon className="h-4 w-4 text-white" />
                       </div>
-                      <span className="font-medium text-gray-900">Create Community</span>
+                      <span className="font-medium text-gray-900">Create Mesh</span>
                     </div>
                     <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -772,45 +1066,49 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Communities You May Like */}
+              {/* Meshes You May Like */}
               <div className="bg-white rounded-xl shadow-sm border p-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">Communities You May Like</h2>
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Meshes You May Like</h2>
                 <div className="space-y-3">
-                  <div className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-medium text-gray-900">ULM Computer Science</h3>
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">Study</span>
+                  {suggestedCommunities.length === 0 ? (
+                    <div className="text-center py-6">
+                      <p className="text-gray-500 text-sm">No new meshes to suggest right now.</p>
+                      <p className="text-gray-400 text-xs mt-1">Check back later for more communities!</p>
                     </div>
-                    <p className="text-sm text-gray-600 mb-2">Connect with CS students, share resources, and form study groups.</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">127 members</span>
-                      <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">Join</button>
-                    </div>
-                  </div>
-                  
-                  <div className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-medium text-gray-900">ULM International Students</h3>
-                      <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">Social</span>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-2">Connect with fellow international students and share experiences.</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">89 members</span>
-                      <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">Join</button>
-                    </div>
-                  </div>
-                  
-                  <div className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-medium text-gray-900">ULM Housing & Roommates</h3>
-                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">Housing</span>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-2">Find roommates, housing options, and apartment recommendations.</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">203 members</span>
-                      <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">Join</button>
-                    </div>
-                  </div>
+                  ) : (
+                    suggestedCommunities.map((community) => {
+                      const categoryColors = {
+                        study: 'bg-blue-100 text-blue-800',
+                        social: 'bg-purple-100 text-purple-800',
+                        club: 'bg-green-100 text-green-800',
+                        class: 'bg-yellow-100 text-yellow-800'
+                      };
+                      
+                      return (
+                        <div key={community.id} className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="font-medium text-gray-900">{community.name}</h3>
+                            <span className={`px-2 py-1 text-xs rounded-full ${categoryColors[community.category] || 'bg-gray-100 text-gray-800'}`}>
+                              {community.category?.charAt(0).toUpperCase() + community.category?.slice(1) || 'General'}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 mb-2 line-clamp-2">{community.description}</p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500">
+                              {community.memberCount || 0} members
+                            </span>
+                            <button
+                              onClick={() => joinCommunity(community.id, community.name)}
+                              disabled={joiningCommunity === community.id}
+                              className="text-blue-600 hover:text-blue-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              {joiningCommunity === community.id ? 'Joining...' : 'Join'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             </div>
@@ -913,115 +1211,187 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-6">
-                                      {filteredPosts.map((post) => (
-                    <div 
-                      key={post.id} 
-                      className="bg-white rounded-xl shadow-sm border p-6 cursor-pointer hover:shadow-md transition-shadow"
-                      onClick={() => {
-                        setSelectedPost(post);
-                        setShowComments(true);
-                      }}
-                    >
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center space-x-3">
-                          <span className="font-medium text-gray-900">{post.postedBy}</span>
-                          <RepBadge score={0} size="sm" />
-                          {post.communityName && (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {(showAllPosts ? filteredPosts : filteredPosts.slice(0, INITIAL_POSTS_COUNT)).map((post, index) => {
+                      const isExpanded = expandedPosts.has(post.id);
+                      const shouldTruncate = post.description.length > 150;
+                      const displayText = shouldTruncate && !isExpanded 
+                        ? post.description.substring(0, 150) + '...' 
+                        : post.description;
+                      
+                      return (
+                        <div 
+                          key={post.id} 
+                          className="bg-white rounded-xl shadow-sm border p-4 cursor-pointer hover:shadow-lg transition-all duration-300 flex flex-col h-full"
+                          onClick={() => {
+                            router.push(`/post/${post.id}`);
+                          }}
+                        >
+                          {/* Header */}
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center space-x-2 flex-wrap gap-1">
+                              <span className="font-medium text-gray-900 text-sm">{post.postedBy}</span>
+                              <RepBadge score={0} size="sm" />
+                              {post.communityName && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    router.push(`/community/${post.communityId || ''}`);
+                                  }}
+                                  className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full hover:bg-blue-200 transition-colors"
+                                >
+                                  {post.communityName}
+                                </button>
+                              )}
+                              {post.submessName && (
+                                <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                                  {post.submessName}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs text-gray-400 shrink-0">
+                              {formatTimeAgo(new Date(post.postedAt))}
+                            </span>
+                          </div>
+                          
+                          {/* Content */}
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-gray-900 mb-2 text-base leading-tight">{post.title}</h3>
+                            <div className="text-gray-600 text-sm leading-relaxed">
+                              <p>{displayText}</p>
+                              {shouldTruncate && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedPosts(prev => {
+                                      const newSet = new Set(prev);
+                                      if (isExpanded) {
+                                        newSet.delete(post.id);
+                                      } else {
+                                        newSet.add(post.id);
+                                      }
+                                      return newSet;
+                                    });
+                                  }}
+                                  className="text-blue-600 hover:text-blue-700 text-xs mt-1 font-medium"
+                                >
+                                  {isExpanded ? 'Show less' : 'Show more'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Actions */}
+                          <div className="flex space-x-2 mt-4 pt-3 border-t border-gray-100">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                router.push(`/community/${post.communityId || ''}`);
+                                router.push(`/post/${post.id}`);
                               }}
-                              className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full hover:bg-blue-200 transition-colors"
+                              className="flex-1 flex items-center justify-center px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-xs"
                             >
-                              {post.communityName}
+                              <ChatBubbleLeftIcon className="h-3 w-3 mr-1" />
+                              Comments ({commentCounts[post.id] || 0})
                             </button>
-                          )}
-                          {post.submessName && (
-                            <span className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full">
-                              {post.submessName}
-                            </span>
-                          )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const chatId = [user?.uid, post.userId].sort().join('_');
+                                router.push(`/chat/${chatId}`);
+                              }}
+                              className="flex-1 flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
+                            >
+                              <ChatBubbleLeftIcon className="h-3 w-3 mr-1" />
+                              Chat
+                            </button>
+                          </div>
                         </div>
-                        <span className="text-sm text-gray-400">
-                          {formatTimeAgo(new Date(post.postedAt))}
-                        </span>
+                      );
+                      })}
+                    </div>
+                    {!showAllPosts && filteredPosts.length > INITIAL_POSTS_COUNT && (
+                      <div className="text-center mt-6">
+                        <button
+                          onClick={() => setShowAllPosts(true)}
+                          className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-lg"
+                        >
+                          Show More ({filteredPosts.length - INITIAL_POSTS_COUNT} more posts)
+                        </button>
                       </div>
-                      <h3 className="text-xl font-semibold text-gray-900 mb-3">{post.title}</h3>
-                      <p className="text-gray-600 mb-4">{post.description}</p>
-                        <div className="flex space-x-3">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedPost(post);
-                              setShowComments(true);
-                            }}
-                            className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                          >
-                            <ChatBubbleLeftIcon className="h-4 w-4 mr-2" />
-                            Comments (0)
-                          </button>
-                          <button
-                            onClick={() => {
-                              // Navigate to chat page with the post author
-                              const chatId = [user?.uid, post.userId].sort().join('_');
-                              router.push(`/chat/${chatId}`);
-                            }}
-                            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                          >
-                            <ChatBubbleLeftIcon className="h-4 w-4 mr-2" />
-                            Chat
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Floating Create Post Button - Desktop */}
-        <button
-          onClick={() => setShowModal(true)}
-          className="fixed bottom-8 right-8 w-16 h-16 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center z-30 transition-all duration-200 hover:scale-110 hidden lg:flex"
-          style={{ boxShadow: '0 6px 25px rgba(59, 130, 246, 0.4)' }}
-        >
-          <PlusIcon className="h-7 w-7" />
-        </button>
+        {/* Floating Go to Top Button - Desktop */}
+        {showScrollToTop && (
+          <button
+            onClick={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className="fixed bottom-8 right-8 w-14 h-14 bg-gray-600 hover:bg-gray-700 text-white rounded-full shadow-lg flex items-center justify-center z-30 transition-all duration-200 hover:scale-110 hidden lg:flex animate-in slide-in-from-bottom-4 duration-300"
+            style={{ boxShadow: '0 6px 25px rgba(75, 85, 99, 0.4)' }}
+          >
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+            </svg>
+          </button>
+        )}
       </div>
+
+      {/* Floating Go to Top Button - Mobile */}
+      {showScrollToTop && (
+        <button
+          onClick={() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className="fixed bottom-6 right-6 w-12 h-12 bg-gray-600 hover:bg-gray-700 text-white rounded-full shadow-lg flex items-center justify-center z-30 transition-all duration-200 hover:scale-110 lg:hidden animate-in slide-in-from-bottom-4 duration-300"
+          style={{ boxShadow: '0 4px 20px rgba(75, 85, 99, 0.4)' }}
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+          </svg>
+        </button>
+      )}
+
+      {/* Help Button - Mobile */}
+      <button
+        onClick={() => setShowHelp(true)}
+        className="fixed bottom-6 left-6 w-12 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center z-30 transition-all duration-200 hover:scale-110 lg:hidden animate-in slide-in-from-bottom-4 duration-300"
+        style={{ boxShadow: '0 4px 20px rgba(59, 130, 246, 0.4)' }}
+        title="Help & Guide"
+      >
+        <QuestionMarkCircleIcon className="h-6 w-6" />
+      </button>
 
       {/* Create Post Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-30">
-          <div className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl">
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-30">
+          <div className="bg-white rounded-xl w-full max-w-md max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b px-4 sm:px-6 py-3 sm:py-4 rounded-t-xl">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">NEW POST</h2>
-                <div className="flex items-center space-x-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowModal(false);
-                      setFormData({ title: '', description: '', type: '', communityId: '', submessId: '' });
-                    }}
-                    className="text-gray-500 hover:text-gray-700 text-sm font-medium"
-                  >
-                    Cancel
-                  </button>
-                </div>
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">NEW POST</h2>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowModal(false);
+                    setFormData({ title: '', description: '', type: '', communityId: '', submessId: '' });
+                  }}
+                  className="text-gray-500 hover:text-gray-700 text-sm font-medium"
+                >
+                  ✕
+                </button>
               </div>
             </div>
             
-            <div className="p-6">
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="p-4 sm:p-6">
+            <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
               {userCommunities.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Post to Community (Required)
-                  </label>
                   <select 
                     value={formData.communityId}
                     onChange={(e) => {
@@ -1031,10 +1401,10 @@ export default function DashboardPage() {
                         submessId: '' // Reset submess when community changes
                       });
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                    className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 text-base"
                     required
                   >
-                    <option value="">Select a Community</option>
+                    <option value="">📍 Select Mesh</option>
                     {userCommunities.map((community) => (
                       <option key={community.communityId} value={community.communityId}>
                         {community.communityName}
@@ -1046,16 +1416,13 @@ export default function DashboardPage() {
 
               {formData.communityId && communitySubmesses[formData.communityId] && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Post to Submess (Required)
-                  </label>
                   <select 
                     value={formData.submessId}
                     onChange={(e) => setFormData({ ...formData, submessId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                    className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 text-base"
                     required
                   >
-                    <option value="">Select a Submess</option>
+                    <option value="">🏷️ Select Submesh</option>
                     {communitySubmesses[formData.communityId].map((submess) => (
                       <option key={submess.id} value={submess.name}>
                         {submess.name}
@@ -1066,40 +1433,34 @@ export default function DashboardPage() {
               )}
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Title
-                </label>
                 <input
                   type="text"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                  placeholder="Enter post title"
+                  className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 text-base"
+                  placeholder="✏️ What's your post about?"
                   required
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
                 <textarea
-                  rows={4}
+                  rows={3}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                  placeholder="Enter post description"
+                  className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 text-base resize-none"
+                  placeholder="💭 Share your thoughts..."
                   required
                 />
               </div>
 
-              <div className="flex justify-end pt-4">
+              <div className="pt-2">
                 <button
                   type="submit"
                   disabled={isSubmitting || !formData.title.trim() || !formData.description.trim()}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-base"
                 >
-                  {isSubmitting ? 'Posting...' : 'Post'}
+                  {isSubmitting ? '📤 Posting...' : '🚀 Share Post'}
                 </button>
               </div>
 
@@ -1111,7 +1472,7 @@ export default function DashboardPage() {
 
       {/* Community Filter Modal */}
       {showCommunityFilter && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-md w-full max-h-[80vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl">
               <div className="flex items-center justify-between">
@@ -1189,8 +1550,113 @@ export default function DashboardPage() {
           onClose={() => {
             setShowComments(false);
             setSelectedPost(null);
+            // Refresh comment count for this specific post
+            if (selectedPost) {
+              loadCommentCounts([selectedPost]);
+            }
           }}
         />
+      )}
+
+      {/* Help Modal */}
+      {showHelp && (
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">Welcome to CampusMesh!</h2>
+                <button
+                  onClick={() => setShowHelp(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">What is CampusMesh?</h3>
+                <p className="text-gray-600 mb-4">
+                  CampusMesh is a student community platform designed to help you connect with fellow students, 
+                  share resources, and organize activities within your university community.
+                </p>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">How Meshes & Submeshes Work</h3>
+                <div className="bg-blue-50 rounded-lg p-4 mb-4">
+                  <h4 className="font-semibold text-blue-900 mb-2">Meshes</h4>
+                  <p className="text-blue-800 text-sm mb-3">
+                    Meshes are groups like "Nepalese Student Association of ULM" or "CSCI 2000 Fall 2025". 
+                    Each mesh can have multiple submeshes (categories) for different types of posts.
+                  </p>
+                  
+                  <h4 className="font-semibold text-blue-900 mb-2">Submeshes</h4>
+                  <p className="text-blue-800 text-sm">
+                    Submeshes are categories within meshes. For example, the NSA ULM mesh might have submeshes for:
+                  </p>
+                  <ul className="text-blue-800 text-sm mt-2 ml-4 list-disc">
+                    <li><strong>Rides:</strong> Carpooling and transportation</li>
+                    <li><strong>Housing:</strong> Roommate searches and housing</li>
+                    <li><strong>Books:</strong> Textbook exchanges and study materials</li>
+                    <li><strong>Help:</strong> Academic help and questions</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">How to Use CampusMesh</h3>
+                <div className="space-y-4">
+                  <div className="flex items-start space-x-3">
+                    <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">
+                      1
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900">Join Meshes</h4>
+                      <p className="text-gray-600 text-sm">
+                        Go to the Meshes page to find and join meshes relevant to your interests, classes, or organizations.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start space-x-3">
+                    <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">
+                      2
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900">Create Posts</h4>
+                      <p className="text-gray-600 text-sm">
+                        When creating a post, you must select a mesh and a submesh. This helps organize content and makes it easier for others to find relevant posts.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start space-x-3">
+                    <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">
+                      3
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900">Filter and Browse</h4>
+                      <p className="text-gray-600 text-sm">
+                        Use the filters on the home page to view posts from specific meshes or submeshes. You can also browse all posts or filter by category.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowHelp(false)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
+                >
+                  Got it!
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Toast Notification */}

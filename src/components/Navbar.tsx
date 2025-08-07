@@ -46,9 +46,9 @@ export default function Navbar({ userProfile }: NavbarProps) {
   return (
     <>
       {/* Mobile Navbar */}
-      <nav className="sticky top-6 left-20 right-20 z-50 lg:hidden">
+      <nav className="sticky top-2 left-20 right-20 z-50 lg:hidden">
         <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-lg border border-white/20">
-          <div className="flex justify-between items-center h-20 px-4">
+                      <div className="flex justify-between items-center h-20 px-4">
             <div className="flex items-center justify-start -ml-2">
               <button 
                 onClick={() => router.push('/dashboard')}
@@ -149,11 +149,11 @@ export default function Navbar({ userProfile }: NavbarProps) {
       </nav>
 
       {/* Desktop Navbar */}
-      <nav className="sticky top-8 left-24 right-24 z-50 hidden lg:block">
-        <div className="max-w-none">
+      <nav className="sticky top-2 z-50 hidden lg:block">
+        <div className="max-w-7xl mx-auto px-6">
           <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-lg border border-white/20">
-            <div className="flex justify-between items-center h-16 xl:h-20 px-6 xl:px-12">
-              <div className="flex items-center justify-start -ml-2">
+            <div className="flex justify-between items-center h-24 px-8">
+              <div className="flex items-center justify-start">
                 <button 
                   onClick={() => router.push('/dashboard')}
                   className="hover:scale-105 transition-transform duration-200"
@@ -161,9 +161,9 @@ export default function Navbar({ userProfile }: NavbarProps) {
                   <Image
                     src="/image.svg"
                     alt="CampusMesh Logo"
-                    width={320}
-                    height={64}
-                    className="h-14 sm:h-16 xl:h-18 w-auto"
+                    width={280}
+                    height={56}
+                    className="h-12 w-auto"
                     priority
                   />
                 </button>

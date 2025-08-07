@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, increment, getDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
@@ -29,7 +29,7 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
   const user = auth.currentUser;
 
   // Load comments
-  useState(() => {
+  useEffect(() => {
     if (!user) return;
 
     const commentsRef = collection(db, 'posts', postId, 'comments');
@@ -44,7 +44,7 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
     });
 
     return unsubscribe;
-  });
+  }, [user, postId]);
 
   const addComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,7 +112,7 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
   if (!user) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-xl w-full max-w-md h-[600px] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">

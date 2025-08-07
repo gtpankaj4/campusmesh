@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, increment, where, getDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, increment, where, getDoc, getDocs } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { PaperAirplaneIcon, UserGroupIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
 import RepBadge from "./RepBadge";
@@ -38,6 +38,9 @@ export default function Community({ communityId, communityName, onClose }: Commu
   const [userRep, setUserRep] = useState(0);
   const [communitySubmesses, setCommunitySubmesses] = useState<Submess[]>([]);
   const [selectedSubmess, setSelectedSubmess] = useState<string>('');
+  const [communityData, setCommunityData] = useState<any>(null);
+  const [isMember, setIsMember] = useState(false);
+  const [membershipLoading, setMembershipLoading] = useState(true);
   const user = auth.currentUser;
 
   useEffect(() => {
@@ -53,6 +56,45 @@ export default function Community({ communityId, communityName, onClose }: Commu
         }
       } catch (error) {
         console.error('Error loading user rep:', error);
+      }
+    };
+
+    // Load community data and check membership
+    const loadCommunityAndMembership = async () => {
+      try {
+        setMembershipLoading(true);
+        
+        // Load community data
+        const communityRef = doc(db, 'communities', communityId);
+        const communitySnap = await getDoc(communityRef);
+        
+        if (communitySnap.exists()) {
+          const data = communitySnap.data();
+          setCommunityData(data);
+          
+          // Check if user is a member using consistent format
+          let userIsMember = false;
+          
+          // Check in community.members object
+          if (data.members && typeof data.members === 'object') {
+            userIsMember = data.members[user.uid] !== undefined;
+          }
+          
+          // Double-check in user's communities collection
+          if (!userIsMember) {
+            const userCommunitiesRef = collection(db, 'users', user.uid, 'communities');
+            const userCommunitiesSnap = await getDocs(userCommunitiesRef);
+            const userCommunity = userCommunitiesSnap.docs.find(doc => doc.data().communityId === communityId);
+            userIsMember = !!userCommunity;
+          }
+          
+          setIsMember(userIsMember);
+        }
+      } catch (error) {
+        console.error('Error loading community data:', error);
+        setIsMember(false);
+      } finally {
+        setMembershipLoading(false);
       }
     };
 
@@ -74,14 +116,14 @@ export default function Community({ communityId, communityName, onClose }: Commu
     };
 
     loadUserRep();
+    loadCommunityAndMembership();
     loadCommunitySubmesses();
 
     // Load community posts from main posts collection
     const postsRef = collection(db, 'posts');
     const q = query(
       postsRef, 
-      where('communityId', '==', communityId),
-      orderBy('createdAt', 'desc')
+      where('communityId', '==', communityId)
     );
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -89,6 +131,14 @@ export default function Community({ communityId, communityName, onClose }: Commu
         id: doc.id,
         ...doc.data()
       })) as CommunityPost[];
+      
+      // Sort manually by createdAt since we can't use orderBy with where on different fields
+      communityPosts.sort((a, b) => {
+        const aTime = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : 0;
+        const bTime = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : 0;
+        return bTime - aTime; // Descending order
+      });
+      
       setPosts(communityPosts);
     });
 
@@ -101,25 +151,58 @@ export default function Community({ communityId, communityName, onClose }: Commu
 
     // Check if submess is selected
     if (!selectedSubmess) {
-      alert('Please select a submess to post to.');
+      console.error('Please select a submess to post to.');
       return;
     }
 
-    // Anti-spam measures
-    if (userRep < 50) {
-      alert('You need at least 50 reputation to post in communities.');
+    // Check if user is a member of this community (required for all communities, but especially private ones)
+    try {
+      const userCommunitiesRef = collection(db, 'users', user.uid, 'communities');
+      const userCommunitiesSnap = await getDocs(userCommunitiesRef);
+      const userCommunity = userCommunitiesSnap.docs.find(doc => doc.data().communityId === communityId);
+      
+      if (!userCommunity) {
+        if (communityData?.isPrivate) {
+          alert('You must be an approved member of this private community to post here.');
+        } else {
+          alert('You must be a member of this community to post here.');
+        }
+        return;
+      }
+
+      const membershipData = userCommunity.data();
+      
+      // Check if user is timed out in this community
+      if (membershipData.timeoutUntil) {
+        const timeoutDate = membershipData.timeoutUntil.toDate ? membershipData.timeoutUntil.toDate() : new Date(membershipData.timeoutUntil);
+        if (timeoutDate > new Date()) {
+          const timeLeft = timeoutDate.getTime() - Date.now();
+          const minutesLeft = Math.ceil(timeLeft / (1000 * 60));
+          alert(`You are timed out from posting in this community for ${minutesLeft} more minutes.`);
+          return;
+        }
+      }
+
+      // Check if user is banned
+      if (membershipData.isBanned) {
+        alert('You are banned from posting in this community.');
+        return;
+      }
+    } catch (error) {
+      console.error('Error checking membership status:', error);
+      alert('Error checking your membership status. Please try again.');
       return;
     }
 
-    // Check for recent posts (max 3 posts per hour)
+    // Anti-spam measures - Check for recent posts (max 3 posts per 15 minutes)
     const recentPosts = posts.filter(post => 
       post.userId === user.uid && 
       post.timestamp?.toDate && 
-      (Date.now() - post.timestamp.toDate().getTime()) < 3600000
+      (Date.now() - post.timestamp.toDate().getTime()) < 900000 // 15 minutes in milliseconds
     );
 
     if (recentPosts.length >= 3) {
-      alert('You can only post 3 times per hour. Please wait before posting again.');
+      alert('You can only post 3 times per 15 minutes. Please wait before posting again.');
       return;
     }
 
@@ -191,7 +274,7 @@ export default function Community({ communityId, communityName, onClose }: Commu
   if (!user) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-xl w-full max-w-4xl h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
@@ -199,7 +282,7 @@ export default function Community({ communityId, communityName, onClose }: Commu
             <UserGroupIcon className="h-6 w-6 text-blue-600" />
             <div>
               <h3 className="font-semibold text-gray-900">{communityName}</h3>
-              <p className="text-sm text-gray-500">Private Community</p>
+              <p className="text-sm text-gray-500">Private Mesh</p>
             </div>
           </div>
           <div className="flex items-center space-x-3">
@@ -252,7 +335,30 @@ export default function Community({ communityId, communityName, onClose }: Commu
           {/* Post Form */}
           <div className="w-80 border-l p-4">
             <h4 className="font-semibold text-gray-900 mb-4">Create Post</h4>
-            <form onSubmit={addPost} className="space-y-4">
+            
+            {membershipLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              </div>
+            ) : !isMember ? (
+              <div className="text-center py-8">
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-center justify-center w-12 h-12 mx-auto mb-3 bg-yellow-100 rounded-full">
+                    <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-sm font-medium text-yellow-800 mb-1">Members Only</h3>
+                  <p className="text-xs text-yellow-700">
+                    {communityData?.isPrivate 
+                      ? "Join this private community to create posts"
+                      : "Join this community to create posts"
+                    }
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={addPost} className="space-y-4">
               {/* Submess Selection */}
               {communitySubmesses.length > 0 && (
                 <div>
@@ -318,7 +424,7 @@ export default function Community({ communityId, communityName, onClose }: Commu
 
               <button
                 type="submit"
-                disabled={loading || userRep < 50 || !selectedSubmess}
+                disabled={loading || !selectedSubmess}
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {loading ? (
@@ -334,12 +440,9 @@ export default function Community({ communityId, communityName, onClose }: Commu
                 )}
               </button>
 
-              {userRep < 50 && (
-                <p className="text-xs text-red-600 text-center">
-                  You need 50+ reputation to post in communities
-                </p>
-              )}
-            </form>
+
+              </form>
+            )}
           </div>
         </div>
       </div>

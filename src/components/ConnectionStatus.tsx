@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { realtimeDb } from '@/lib/firebase';
 import { ref, onValue, off } from 'firebase/database';
 
 export default function ConnectionStatus() {
   const [isConnected, setIsConnected] = useState(true);
   const [showStatus, setShowStatus] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     // Monitor Firebase connection status
@@ -28,7 +30,8 @@ export default function ConnectionStatus() {
     return () => off(connectedRef, 'value', unsubscribe);
   }, []);
 
-  if (!showStatus) return null;
+  // Hide on login page or if status shouldn't be shown
+  if (!showStatus || pathname === '/login') return null;
 
   return (
     <div className={`fixed top-4 right-4 z-50 px-4 py-2 rounded-lg shadow-lg transition-all duration-300 ${
