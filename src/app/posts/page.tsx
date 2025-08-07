@@ -835,10 +835,10 @@ export default function CommunitiesPage() {
         const posts = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        }));
+        })) as any[];
         
         // Sort manually by createdAt since we can't use orderBy with where on different fields
-        posts.sort((a, b) => {
+        posts.sort((a: any, b: any) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
           const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
           return bTime - aTime; // Descending order

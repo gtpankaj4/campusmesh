@@ -616,7 +616,7 @@ export default function DashboardPage() {
       }
       
       // Delete user's community memberships
-      const userCommunitiesRef = collection(db, 'users', user.uid, 'communities');
+      const userCommunitiesRef = collection(db, 'users', user!.uid, 'communities');
       const userCommunitiesSnapshot = await getDocs(userCommunitiesRef);
       
       for (const doc of userCommunitiesSnapshot.docs) {
@@ -1077,7 +1077,7 @@ export default function DashboardPage() {
                     </div>
                   ) : (
                     suggestedCommunities.map((community) => {
-                      const categoryColors = {
+                      const categoryColors: Record<string, string> = {
                         study: 'bg-blue-100 text-blue-800',
                         social: 'bg-purple-100 text-purple-800',
                         club: 'bg-green-100 text-green-800',

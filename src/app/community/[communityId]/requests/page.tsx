@@ -68,6 +68,11 @@ export default function CommunityRequestsPage() {
   }, [user, communityId, router]);
 
   const loadCommunityAndRequests = async () => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
     try {
       setLoading(true);
 
