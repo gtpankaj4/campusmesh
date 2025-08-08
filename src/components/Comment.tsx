@@ -1,7 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, increment, getDoc } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  query,
+  orderBy,
+  onSnapshot,
+  doc,
+  updateDoc,
+  increment,
+  getDoc,
+} from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import RepBadge from "./RepBadge";
@@ -32,13 +43,13 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
   useEffect(() => {
     if (!user) return;
 
-    const commentsRef = collection(db, 'posts', postId, 'comments');
-    const q = query(commentsRef, orderBy('timestamp', 'desc'));
-    
+    const commentsRef = collection(db, "posts", postId, "comments");
+    const q = query(commentsRef, orderBy("timestamp", "desc"));
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const postComments: Comment[] = snapshot.docs.map(doc => ({
+      const postComments: Comment[] = snapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       })) as Comment[];
       setComments(postComments);
     });
@@ -53,57 +64,61 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
     setLoading(true);
     try {
       // Add comment
-      const commentsRef = collection(db, 'posts', postId, 'comments');
+      const commentsRef = collection(db, "posts", postId, "comments");
       // Get user profile for username
-      const userRef = doc(db, 'users', user.uid);
+      const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
       const userData = userSnap.exists() ? userSnap.data() : null;
-      
+
       await addDoc(commentsRef, {
         text: newComment.trim(),
         userId: user.uid,
         userEmail: user.email,
-        username: userData?.username || user.email?.split('@')[0] || 'User',
+        username: userData?.username || user.email?.split("@")[0] || "User",
         timestamp: serverTimestamp(),
-        userRep: userData?.reputation || 0
+        userRep: userData?.reputation || 0,
       });
 
       // Update user reputation (+5 for commenting)
-      const userRefForRep = doc(db, 'users', user.uid);
+      const userRefForRep = doc(db, "users", user.uid);
       await updateDoc(userRefForRep, {
-        reputation: increment(5)
+        reputation: increment(5),
       });
 
       // Update post author reputation (+5 for receiving comment)
-      const postAuthorRef = doc(db, 'users', postUserId);
+      const postAuthorRef = doc(db, "users", postUserId);
       await updateDoc(postAuthorRef, {
-        reputation: increment(5)
+        reputation: increment(5),
       });
 
       // Create notification for post author (if not self-comment)
       if (postUserId !== user.uid) {
         try {
-          const { createCommentNotification } = await import('./NotificationSystem');
-          
+          const { createCommentNotification } = await import(
+            "./NotificationSystem"
+          );
+
           // Get post title for notification
-          const postRef = doc(db, 'posts', postId);
+          const postRef = doc(db, "posts", postId);
           const postSnap = await getDoc(postRef);
-          const postTitle = postSnap.exists() ? postSnap.data()?.title || 'your post' : 'your post';
-          
+          const postTitle = postSnap.exists()
+            ? postSnap.data()?.title || "your post"
+            : "your post";
+
           await createCommentNotification(
             postUserId,
             user.uid,
-            userData?.username || user.email?.split('@')[0] || 'Someone',
+            userData?.username || user.email?.split("@")[0] || "Someone",
             postTitle
           );
         } catch (error) {
-          console.error('Error creating comment notification:', error);
+          console.error("Error creating comment notification:", error);
         }
       }
 
       setNewComment("");
     } catch (error) {
-      console.error('Error adding comment:', error);
+      console.error("Error adding comment:", error);
     } finally {
       setLoading(false);
     }
@@ -121,8 +136,18 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
           >
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -131,21 +156,27 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {comments.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-gray-500">No comments yet. Be the first to comment!</p>
+              <p className="text-gray-500">
+                No comments yet. Be the first to comment!
+              </p>
             </div>
           ) : (
             comments.map((comment) => (
               <div key={comment.id} className="border-b border-gray-100 pb-3">
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center space-x-2">
-                    <span className="font-medium text-sm text-gray-900">{comment.username}</span>
+                    <span className="font-medium text-sm text-gray-900">
+                      {comment.username}
+                    </span>
                     <RepBadge score={comment.userRep} size="sm" />
                   </div>
                   <span className="text-xs text-gray-400">
-                    {comment.timestamp?.toDate ? 
-                      comment.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) :
-                      'Just now'
-                    }
+                    {comment.timestamp?.toDate
+                      ? comment.timestamp.toDate().toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "Just now"}
                   </span>
                 </div>
                 <p className="text-sm text-gray-700">{comment.text}</p>
@@ -177,4 +208,4 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
       </div>
     </div>
   );
-} 
+}

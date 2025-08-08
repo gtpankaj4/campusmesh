@@ -60,7 +60,7 @@ export default function ChatButton({ postCreatorId, className = '', children }: 
         try {
           const basicUserData = {
             uid: postCreatorId,
-            email: `user_${postCreatorId}@campusmesh.com`,
+            email: `user_${postCreatorId}@campesh.com`,
             username: `User_${postCreatorId.slice(-6)}`,
             displayName: `User ${postCreatorId.slice(-6)}`,
             createdAt: Date.now()

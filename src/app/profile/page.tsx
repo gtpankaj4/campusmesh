@@ -327,7 +327,7 @@ export default function ProfilePage() {
           <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">Welcome to CampusMesh!</h2>
+                <h2 className="text-xl font-semibold text-gray-900">Welcome to Campesh!</h2>
                 <button
                   onClick={() => setShowHelp(false)}
                   className="text-gray-500 hover:text-gray-700"
@@ -339,9 +339,9 @@ export default function ProfilePage() {
             
             <div className="p-6 space-y-6">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">What is CampusMesh?</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">What is Campesh?</h3>
                 <p className="text-gray-600 mb-4">
-                  CampusMesh is a student community platform designed to help you connect with fellow students, 
+                  Campesh is a student community platform designed to help you connect with fellow students, 
                   share resources, and organize activities within your university community.
                 </p>
               </div>
@@ -369,7 +369,7 @@ export default function ProfilePage() {
               </div>
 
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">How to Use CampusMesh</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">How to Use Campesh</h3>
                 <div className="space-y-4">
                   <div className="flex items-start space-x-3">
                     <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">

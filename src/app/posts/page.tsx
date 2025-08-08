@@ -17,6 +17,7 @@ import Community from "@/components/Community";
 import RepBadge from "@/components/RepBadge";
 import Navbar from "@/components/Navbar";
 import Toast from "@/components/Toast";
+import PostInteractions from "@/components/PostInteractions";
 
 interface EnrollmentQuestion {
   id: string;
@@ -1952,24 +1953,15 @@ export default function CommunitiesPage() {
                           <p className="text-sm text-gray-700 line-clamp-2">{post.description}</p>
                         </div>
                         
-                        <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
-                          <PostCommentsButton postId={post.id} onClick={(e) => {
-                            e.stopPropagation();
+                        <PostInteractions
+                          postId={post.id}
+                          postUserId={post.userId || ''}
+                          onCommentClick={(e) => {
+                            e?.stopPropagation();
                             setSelectedPostForModal(post);
                             setShowPostModal(true);
-                          }} />
-                          
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // Chat functionality
-                            }}
-                            className="flex items-center p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Start Chat"
-                          >
-                            <PaperAirplaneIcon className="h-4 w-4" />
-                          </button>
-                        </div>
+                          }}
+                        />
                       </div>
                     ))}
                   </div>
@@ -2137,7 +2129,7 @@ export default function CommunitiesPage() {
                       rows={3}
                       value={joinAnswers[question.question] || ''}
                       onChange={(e) => setJoinAnswers({ ...joinAnswers, [question.question]: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900"
                       placeholder={`Enter your answer${question.required ? ' (required)' : ' (optional)'}`}
                       required={question.required}
                     />
@@ -2197,29 +2189,7 @@ export default function CommunitiesPage() {
   );
 }
 
-// Component to show real comment counts
-function PostCommentsButton({ postId, onClick }: { postId: string; onClick: (e: any) => void }) {
-  const [commentCount, setCommentCount] = useState(0);
 
-  useEffect(() => {
-    const commentsRef = collection(db, 'posts', postId, 'comments');
-    const unsubscribe = onSnapshot(commentsRef, (snapshot) => {
-      setCommentCount(snapshot.size);
-    });
-    return unsubscribe;
-  }, [postId]);
-
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center text-gray-600 hover:text-blue-600 transition-colors text-sm"
-      title={`${commentCount} comments`}
-    >
-      <ChatBubbleLeftIcon className="h-4 w-4" />
-      <span className="ml-1">{commentCount}</span>
-    </button>
-  );
-}
 
 // Post Modal Component
 interface PostModalProps {
@@ -2343,7 +2313,7 @@ function PostModal({ post, onClose }: PostModalProps) {
                       value={newComment}
                       onChange={(e) => setNewComment(e.target.value)}
                       placeholder="Write a comment..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900"
                       rows={2}
                       autoFocus
                     />

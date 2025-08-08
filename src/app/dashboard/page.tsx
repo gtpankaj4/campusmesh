@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, increment, getDoc, where, setDoc, getDocs, deleteDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { PlusIcon, CheckCircleIcon, XCircleIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, QuestionMarkCircleIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, CheckCircleIcon, XCircleIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, QuestionMarkCircleIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
 import Toast from "@/components/Toast";
 
 import Comment from "@/components/Comment";
 import RepBadge from "@/components/RepBadge";
 import Navbar from "@/components/Navbar";
+import PostInteractions from "@/components/PostInteractions";
 
 interface Post {
   id: string;
@@ -63,6 +64,8 @@ export default function DashboardPage() {
   const [communitySubmesses, setCommunitySubmesses] = useState<{[key: string]: any[]}>({});
   const [submessCounts, setSubmessCounts] = useState<{[key: string]: {[key: string]: number}}>({});
   const [activeTab, setActiveTab] = useState<string>('All');
+  const [isCategoryExpanded, setIsCategoryExpanded] = useState(false);
+  const [isClient, setIsClient] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
@@ -82,37 +85,21 @@ export default function DashboardPage() {
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCommunityFilter, setSelectedCommunityFilter] = useState<string>('all');
-  const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set());
-  const [showAllPosts, setShowAllPosts] = useState(false);
-  const INITIAL_POSTS_COUNT = 6;
-  const [commentCounts, setCommentCounts] = useState<{[postId: string]: number}>({});
-  const [showScrollToTop, setShowScrollToTop] = useState(false);
+
+
+
+
   const [suggestedCommunities, setSuggestedCommunities] = useState<any[]>([]);
   const [joiningCommunity, setJoiningCommunity] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const router = useRouter();
 
-  const loadCommentCounts = async (posts: Post[]) => {
-    try {
-      const counts: {[postId: string]: number} = {};
-      
-      // Load comment counts for all posts
-      await Promise.all(posts.map(async (post) => {
-        try {
-          const commentsRef = collection(db, 'posts', post.id, 'comments');
-          const commentsSnapshot = await getDocs(commentsRef);
-          counts[post.id] = commentsSnapshot.size;
-        } catch (error) {
-          console.error('Error loading comment count for post:', post.id, error);
-          counts[post.id] = 0;
-        }
-      }));
-      
-      setCommentCounts(counts);
-    } catch (error) {
-      console.error('Error loading comment counts:', error);
-    }
-  };
+  // Fix hydration issues
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+
 
   const loadUserProfile = async (userId: string) => {
     try {
@@ -426,27 +413,16 @@ export default function DashboardPage() {
             console.log('Prioritized posts for new user:', prioritizedPosts.length);
             setPosts(prioritizedPosts.map(({ commentCount, ...post }) => post)); // Remove commentCount before setting
             
-            // Set comment counts
-            const counts: {[postId: string]: number} = {};
-            postsWithCounts.forEach(post => {
-              counts[post.id] = post.commentCount;
-            });
-            setCommentCounts(counts);
+
             
           } catch (error) {
             console.error('Error prioritizing posts for new user:', error);
             // Fallback to regular posts
             setPosts(convertedPosts);
-            if (convertedPosts.length > 0) {
-              loadCommentCounts(convertedPosts);
-            }
           }
         } else {
           // Regular user - show posts in chronological order
           setPosts(convertedPosts);
-          if (convertedPosts.length > 0) {
-            loadCommentCounts(convertedPosts);
-          }
         }
         
         console.log('=== LOADING POSTS END ===');
@@ -466,13 +442,19 @@ export default function DashboardPage() {
   };
 
   const formatTimeAgo = (date: Date): string => {
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    // Use a more stable approach to avoid hydration issues
+    try {
+      const now = Date.now();
+      const diffInSeconds = Math.floor((now - date.getTime()) / 1000);
 
-    if (diffInSeconds < 60) return 'Just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+      if (diffInSeconds < 60) return 'Just now';
+      if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+      if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+      return `${Math.floor(diffInSeconds / 86400)}d ago`;
+    } catch (error) {
+      // Fallback for hydration issues
+      return 'Recently';
+    }
   };
 
   const showToast = (message: string, type: 'success' | 'error') => {
@@ -713,24 +695,30 @@ export default function DashboardPage() {
     };
   }, [router]);
 
-  // Reset active tab when communities are filtered
+  // Reset active tab when community filter changes
   useEffect(() => {
-    const selectedCommunities = communityFilters.filter(filter => filter.selected);
     let availableSubmesses: string[] = [];
     
-    if (selectedCommunities.length === 0) {
-      availableSubmesses = ['All', ...new Set(posts.map(post => post.category).filter(cat => cat !== 'All'))];
-    } else {
-      const selectedCommunityIds = selectedCommunities.map(c => c.communityId);
-      const submessSet = new Set<string>();
-      
-      selectedCommunityIds.forEach(communityId => {
-        const submesses = communitySubmesses[communityId] || [];
+    if (selectedCommunityFilter === 'all') {
+      // Show all submesses from all communities
+      const allSubmessSet = new Set<string>();
+      Object.values(communitySubmesses).forEach((submesses: any[]) => {
         submesses.forEach((submess: any) => {
-          if (submess.name !== 'All') {
-            submessSet.add(submess.name);
+          if (submess.name && submess.name !== 'All') {
+            allSubmessSet.add(submess.name);
           }
         });
+      });
+      availableSubmesses = ['All', ...Array.from(allSubmessSet)];
+    } else {
+      // Show only submesses from the selected community
+      const submesses = communitySubmesses[selectedCommunityFilter] || [];
+      const submessSet = new Set<string>();
+      
+      submesses.forEach((submess: any) => {
+        if (submess.name !== 'All') {
+          submessSet.add(submess.name);
+        }
       });
       
       availableSubmesses = ['All', ...Array.from(submessSet)];
@@ -740,17 +728,9 @@ export default function DashboardPage() {
     if (!availableSubmesses.includes(activeTab)) {
       setActiveTab('All');
     }
-  }, [communityFilters, communitySubmesses, posts, activeTab]);
+  }, [selectedCommunityFilter, communitySubmesses, posts, activeTab]);
 
-  // Handle scroll for go-to-top button
-  useEffect(() => {
-    const handleScroll = () => {
-      setShowScrollToTop(window.scrollY > 400);
-    };
 
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
 
   // Load suggested communities when user communities change
   useEffect(() => {
@@ -815,60 +795,147 @@ export default function DashboardPage() {
 
           </div>
 
-          {/* Category Tabs */}
-          <div className="flex space-x-2 mb-6 overflow-x-auto scrollbar-hide">
-                          {(() => {
-                // Get submesses from selected communities only
-                const selectedCommunities = communityFilters.filter(filter => filter.selected);
-                let availableSubmesses: string[] = [];
-                
-                if (selectedCommunities.length === 0) {
-                  // No communities selected, show all submesses
-                  availableSubmesses = ['All', ...new Set(posts.map(post => post.category).filter(cat => cat !== 'All'))];
-                } else {
-                  // Get submesses from selected communities only
-                  const selectedCommunityIds = selectedCommunities.map(c => c.communityId);
-                  const submessSet = new Set<string>();
-                  
-                  selectedCommunityIds.forEach(communityId => {
-                    const submesses = communitySubmesses[communityId] || [];
-                    submesses.forEach((submess: any) => {
-                      if (submess.name !== 'All') {
-                        submessSet.add(submess.name);
-                      }
+          {/* Expandable Category Section */}
+          <div className="mb-6">
+            <div className="bg-white border border-gray-200 rounded-lg">
+              {/* Header with first line of categories */}
+              <div 
+                className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
+                onClick={() => setIsCategoryExpanded(!isCategoryExpanded)}
+              >
+                <div className="flex space-x-2 overflow-x-auto scrollbar-hide flex-1 mr-4">
+                  {(() => {
+                    // Get submesses based on selected community filter
+                    let availableSubmesses: string[] = [];
+                    
+                    if (selectedCommunityFilter === 'all') {
+                      // Show all submesses from all communities
+                      const allSubmessSet = new Set<string>();
+                      Object.values(communitySubmesses).forEach((submesses: any[]) => {
+                        submesses.forEach((submess: any) => {
+                          if (submess.name && submess.name !== 'All') {
+                            allSubmessSet.add(submess.name);
+                          }
+                        });
+                      });
+                      availableSubmesses = ['All', ...Array.from(allSubmessSet)];
+                    } else {
+                      // Show only submesses from the selected community
+                      const submesses = communitySubmesses[selectedCommunityFilter] || [];
+                      const submessSet = new Set<string>();
+                      
+                      submesses.forEach((submess: any) => {
+                        if (submess.name !== 'All') {
+                          submessSet.add(submess.name);
+                        }
+                      });
+                      
+                      availableSubmesses = ['All', ...Array.from(submessSet)];
+                    }
+                    
+                    // Show ALL categories in the header
+                    return availableSubmesses.map((tab) => {
+                      const postCount = tab === 'All' ? 
+                        filteredPosts.length : 
+                        filteredPosts.filter(post => post.category === tab).length;
+                      
+                      return (
+                        <button
+                          key={tab}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveTab(tab);
+                          }}
+                          className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap flex items-center space-x-1 ${
+                            activeTab === tab
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          <span>{tab}</span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-xs ${
+                            activeTab === tab
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-white text-gray-500'
+                          }`}>
+                            {postCount}
+                          </span>
+                        </button>
+                      );
                     });
-                  });
-                  
-                  availableSubmesses = ['All', ...Array.from(submessSet)];
-                }
-                
-                return availableSubmesses.map((tab) => {
-                  const postCount = tab === 'All' ? 
-                    filteredPosts.length : 
-                    filteredPosts.filter(post => post.category === tab).length;
-                  
-                  return (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap flex items-center space-x-2 ${
-                        activeTab === tab
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white text-gray-600 border border-gray-200'
-                      }`}
-                    >
-                      <span>{tab}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${
-                        activeTab === tab
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-gray-100 text-gray-500'
-                      }`}>
-                        {postCount}
-                      </span>
-                    </button>
-                  );
-                });
-              })()}
+                  })()}
+                </div>
+                <ChevronDownIcon 
+                  className={`h-5 w-5 text-gray-400 transition-transform duration-200 ${
+                    isCategoryExpanded ? 'rotate-180' : ''
+                  }`} 
+                />
+              </div>
+              
+              {/* Expanded content */}
+              {isCategoryExpanded && (
+                <div className="border-t border-gray-200 p-4">
+                  <div className="flex flex-wrap gap-2">
+                    {(() => {
+                      // Get submesses based on selected community filter
+                      let availableSubmesses: string[] = [];
+                      
+                      if (selectedCommunityFilter === 'all') {
+                        // Show all submesses from all communities
+                        const allSubmessSet = new Set<string>();
+                        Object.values(communitySubmesses).forEach((submesses: any[]) => {
+                          submesses.forEach((submess: any) => {
+                            if (submess.name && submess.name !== 'All') {
+                              allSubmessSet.add(submess.name);
+                            }
+                          });
+                        });
+                        availableSubmesses = ['All', ...Array.from(allSubmessSet)];
+                      } else {
+                        // Show only submesses from the selected community
+                        const submesses = communitySubmesses[selectedCommunityFilter] || [];
+                        const submessSet = new Set<string>();
+                        
+                        submesses.forEach((submess: any) => {
+                          if (submess.name !== 'All') {
+                            submessSet.add(submess.name);
+                          }
+                        });
+                        
+                        availableSubmesses = ['All', ...Array.from(submessSet)];
+                      }
+                      
+                      return availableSubmesses.map((tab) => {
+                        const postCount = tab === 'All' ? 
+                          filteredPosts.length : 
+                          filteredPosts.filter(post => post.category === tab).length;
+                        
+                        return (
+                          <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap flex items-center space-x-2 ${
+                              activeTab === tab
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                            }`}
+                          >
+                            <span>{tab}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-xs ${
+                              activeTab === tab
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-gray-100 text-gray-500'
+                            }`}>
+                              {postCount}
+                            </span>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
 
@@ -896,113 +963,107 @@ export default function DashboardPage() {
             ) : (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {(showAllPosts ? filteredPosts : filteredPosts.slice(0, INITIAL_POSTS_COUNT)).map((post, index) => {
-                  const isExpanded = expandedPosts.has(post.id);
-                  const shouldTruncate = post.description.length > 120;
-                  const displayText = shouldTruncate && !isExpanded 
-                    ? post.description.substring(0, 120) + '...' 
+                  {filteredPosts.map((post, index) => {
+                  const shouldTruncate = post.description.length > 150;
+                  const displayText = shouldTruncate 
+                    ? post.description.substring(0, 150) + '...' 
                     : post.description;
+                  
+                  // Smart community name truncation
+                  const getCommunityDisplay = (communityName: string) => {
+                    if (!communityName) return '';
+                    if (communityName.length <= 15) return communityName;
+                    return communityName.substring(0, 12) + '...';
+                  };
                   
                   return (
                     <div 
                       key={post.id} 
-                      className="bg-white rounded-xl shadow-sm border p-4 cursor-pointer hover:shadow-lg transition-all duration-300 flex flex-col h-full hover:scale-[1.02]"
-                      onClick={() => {
-                        router.push(`/post/${post.id}`);
-                      }}
+                      className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 flex flex-col h-full group"
                     >
-                      {/* Header */}
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center space-x-2 flex-wrap gap-1">
-                          <span className="font-medium text-gray-900 text-sm">{post.postedBy}</span>
-                          <RepBadge score={0} size="sm" />
-                          {post.communityName && (
+                      {/* Header with breadcrumb style */}
+                      <div className="p-4 pb-2">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center text-xs text-gray-500 space-x-1">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                router.push(`/community/${post.communityId || ''}`);
+                                router.push(`/profile/${post.userId}`);
                               }}
-                              className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full hover:bg-blue-200 transition-colors"
+                              className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer"
                             >
-                              {post.communityName}
+                              {post.postedBy}
                             </button>
-                          )}
-                          {post.submessName && (
-                            <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                              {post.submessName}
-                            </span>
-                          )}
+                            {post.communityName && (
+                              <>
+                                <span>›</span>
+                                <span 
+                                  className="px-2 py-0.5 bg-stone-100 text-stone-700 rounded-md text-xs hover:bg-stone-200 cursor-pointer transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    router.push(`/community/${post.communityId || ''}`);
+                                  }}
+                                  title={post.communityName}
+                                >
+                                  {getCommunityDisplay(post.communityName)}
+                                </span>
+                              </>
+                            )}
+                            {post.submessName && (
+                              <>
+                                <span>›</span>
+                                <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md text-xs font-medium">{post.submessName}</span>
+                              </>
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-400">
+                            {isClient ? formatTimeAgo(new Date(post.postedAt)) : 'Recently'}
+                          </span>
                         </div>
-                        <span className="text-xs text-gray-400 shrink-0">
-                          {formatTimeAgo(new Date(post.postedAt))}
-                        </span>
+                        
+                        {/* Title */}
+                        <h3 
+                          className="font-semibold text-gray-900 text-base leading-tight mb-2 cursor-pointer hover:text-blue-600 transition-colors line-clamp-2"
+                          onClick={() => router.push(`/post/${post.id}`)}
+                        >
+                          {post.title}
+                        </h3>
                       </div>
                       
                       {/* Content */}
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900 mb-2 text-base leading-tight">{post.title}</h3>
+                      <div className="px-4 pb-3 flex-1">
                         <div className="text-gray-600 text-sm leading-relaxed">
-                          <p>{displayText}</p>
+                          <p className="line-clamp-3">{displayText}</p>
                           {shouldTruncate && (
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setExpandedPosts(prev => {
-                                  const newSet = new Set(prev);
-                                  if (isExpanded) {
-                                    newSet.delete(post.id);
-                                  } else {
-                                    newSet.add(post.id);
-                                  }
-                                  return newSet;
-                                });
-                              }}
-                              className="text-blue-600 hover:text-blue-700 text-xs mt-1 font-medium"
+                              onClick={() => router.push(`/post/${post.id}`)}
+                              className="text-blue-600 hover:text-blue-700 text-xs mt-2 font-medium inline-flex items-center group-hover:underline"
                             >
-                              {isExpanded ? 'Show less' : 'Show more'}
+                              Read more
+                              <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
                             </button>
                           )}
                         </div>
                       </div>
                       
                       {/* Actions */}
-                      <div className="flex space-x-2 mt-4 pt-3 border-t border-gray-100">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
+                      <div className="border-t border-gray-100">
+                        <PostInteractions
+                          postId={post.id}
+                          postUserId={post.userId || ''}
+                          onCommentClick={(e) => {
+                            e?.stopPropagation();
                             router.push(`/post/${post.id}`);
                           }}
-                          className="flex-1 flex items-center justify-center px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-xs"
-                        >
-                          <ChatBubbleLeftIcon className="h-3 w-3 mr-1" />
-                          Comments ({commentCounts[post.id] || 0})
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const chatId = [user?.uid, post.userId].sort().join('_');
-                            router.push(`/chat/${chatId}`);
-                          }}
-                          className="flex-1 flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
-                        >
-                          <ChatBubbleLeftIcon className="h-3 w-3 mr-1" />
-                          Chat
-                        </button>
+                          className="mt-0 pt-3 border-t-0"
+                        />
                       </div>
                     </div>
                   );
                   })}
                 </div>
-                {!showAllPosts && filteredPosts.length > INITIAL_POSTS_COUNT && (
-                  <div className="text-center mt-4">
-                    <button
-                      onClick={() => setShowAllPosts(true)}
-                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                    >
-                      Show More ({filteredPosts.length - INITIAL_POSTS_COUNT} more posts)
-                    </button>
-                  </div>
-                )}
               </>
             )}
           </div>
@@ -1134,61 +1195,146 @@ export default function DashboardPage() {
                 </fieldset>
               </div>
 
-              {/* Category Tabs */}
-              <div className="bg-white rounded-xl shadow-sm border p-4 mb-6">
-                <div className="flex flex-wrap gap-2">
-                  {(() => {
-                    // Get submesses from selected communities only
-                    const selectedCommunities = communityFilters.filter(filter => filter.selected);
-                    let availableSubmesses: string[] = [];
-                    
-                    if (selectedCommunities.length === 0) {
-                      // No communities selected, show all submesses
-                      availableSubmesses = ['All', ...new Set(posts.map(post => post.category).filter(cat => cat !== 'All'))];
-                    } else {
-                      // Get submesses from selected communities only
-                      const selectedCommunityIds = selectedCommunities.map(c => c.communityId);
-                      const submessSet = new Set<string>();
-                      
-                      selectedCommunityIds.forEach(communityId => {
-                        const submesses = communitySubmesses[communityId] || [];
-                        submesses.forEach((submess: any) => {
-                          if (submess.name !== 'All') {
-                            submessSet.add(submess.name);
-                          }
+              {/* Expandable Category Section */}
+              <div className="mb-6">
+                <div className="bg-white border border-gray-200 rounded-lg">
+                  {/* Header with first line of categories */}
+                  <div 
+                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
+                    onClick={() => setIsCategoryExpanded(!isCategoryExpanded)}
+                  >
+                    <div className="flex space-x-2 overflow-x-auto scrollbar-hide flex-1 mr-4">
+                      {(() => {
+                        // Get submesses based on selected community filter
+                        let availableSubmesses: string[] = [];
+                        
+                        if (selectedCommunityFilter === 'all') {
+                          // Show all submesses from all communities
+                          const allSubmessSet = new Set<string>();
+                          Object.values(communitySubmesses).forEach((submesses: any[]) => {
+                            submesses.forEach((submess: any) => {
+                              if (submess.name && submess.name !== 'All') {
+                                allSubmessSet.add(submess.name);
+                              }
+                            });
+                          });
+                          availableSubmesses = ['All', ...Array.from(allSubmessSet)];
+                        } else {
+                          // Show only submesses from the selected community
+                          const submesses = communitySubmesses[selectedCommunityFilter] || [];
+                          const submessSet = new Set<string>();
+                          
+                          submesses.forEach((submess: any) => {
+                            if (submess.name !== 'All') {
+                              submessSet.add(submess.name);
+                            }
+                          });
+                          
+                          availableSubmesses = ['All', ...Array.from(submessSet)];
+                        }
+                        
+                        // Show ALL categories in the header for mobile
+                        return availableSubmesses.map((tab) => {
+                          const postCount = tab === 'All' ? 
+                            filteredPosts.length : 
+                            filteredPosts.filter(post => post.category === tab).length;
+                          
+                          return (
+                            <button
+                              key={tab}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveTab(tab);
+                              }}
+                              className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap flex items-center space-x-1 ${
+                                activeTab === tab
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              }`}
+                            >
+                              <span>{tab}</span>
+                              <span className={`px-1 py-0.5 rounded-full text-xs ${
+                                activeTab === tab
+                                  ? 'bg-blue-500 text-white'
+                                  : 'bg-white text-gray-500'
+                              }`}>
+                                {postCount}
+                              </span>
+                            </button>
+                          );
                         });
-                      });
-                      
-                      availableSubmesses = ['All', ...Array.from(submessSet)];
-                    }
-                    
-                    return availableSubmesses.map((tab) => {
-                      const postCount = tab === 'All' ? 
-                        filteredPosts.length : 
-                        filteredPosts.filter(post => post.category === tab).length;
-                      
-                      return (
-                        <button
-                          key={tab}
-                          onClick={() => setActiveTab(tab)}
-                          className={`px-3 py-2 rounded-full text-sm font-medium flex items-center space-x-2 ${
-                            activeTab === tab
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                          }`}
-                        >
-                          <span>{tab}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-xs ${
-                            activeTab === tab
-                              ? 'bg-blue-500 text-white'
-                              : 'bg-white text-gray-500'
-                          }`}>
-                            {postCount}
-                          </span>
-                        </button>
-                      );
-                    });
-                  })()}
+                      })()}
+                    </div>
+                    <ChevronDownIcon 
+                      className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+                        isCategoryExpanded ? 'rotate-180' : ''
+                      }`} 
+                    />
+                  </div>
+                  
+                  {/* Expanded content */}
+                  {isCategoryExpanded && (
+                    <div className="border-t border-gray-200 p-4">
+                      <div className="flex flex-wrap gap-2">
+                        {(() => {
+                          // Get submesses based on selected community filter
+                          let availableSubmesses: string[] = [];
+                          
+                          if (selectedCommunityFilter === 'all') {
+                            // Show all submesses from all communities
+                            const allSubmessSet = new Set<string>();
+                            Object.values(communitySubmesses).forEach((submesses: any[]) => {
+                              submesses.forEach((submess: any) => {
+                                if (submess.name && submess.name !== 'All') {
+                                  allSubmessSet.add(submess.name);
+                                }
+                              });
+                            });
+                            availableSubmesses = ['All', ...Array.from(allSubmessSet)];
+                          } else {
+                            // Show only submesses from the selected community
+                            const submesses = communitySubmesses[selectedCommunityFilter] || [];
+                            const submessSet = new Set<string>();
+                            
+                            submesses.forEach((submess: any) => {
+                              if (submess.name !== 'All') {
+                                submessSet.add(submess.name);
+                              }
+                            });
+                            
+                            availableSubmesses = ['All', ...Array.from(submessSet)];
+                          }
+                          
+                          return availableSubmesses.map((tab) => {
+                            const postCount = tab === 'All' ? 
+                              filteredPosts.length : 
+                              filteredPosts.filter(post => post.category === tab).length;
+                            
+                            return (
+                              <button
+                                key={tab}
+                                onClick={() => setActiveTab(tab)}
+                                className={`px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap flex items-center space-x-2 ${
+                                  activeTab === tab
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                }`}
+                              >
+                                <span>{tab}</span>
+                                <span className={`px-2 py-0.5 rounded-full text-xs ${
+                                  activeTab === tab
+                                    ? 'bg-blue-500 text-white'
+                                    : 'bg-white text-gray-500'
+                                }`}>
+                                  {postCount}
+                                </span>
+                              </button>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1213,113 +1359,107 @@ export default function DashboardPage() {
                 ) : (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {(showAllPosts ? filteredPosts : filteredPosts.slice(0, INITIAL_POSTS_COUNT)).map((post, index) => {
-                      const isExpanded = expandedPosts.has(post.id);
-                      const shouldTruncate = post.description.length > 150;
-                      const displayText = shouldTruncate && !isExpanded 
-                        ? post.description.substring(0, 150) + '...' 
+                      {filteredPosts.map((post, index) => {
+                      const shouldTruncate = post.description.length > 120;
+                      const displayText = shouldTruncate 
+                        ? post.description.substring(0, 120) + '...' 
                         : post.description;
+                      
+                      // Smart community name truncation for mobile
+                      const getCommunityDisplay = (communityName: string) => {
+                        if (!communityName) return '';
+                        if (communityName.length <= 12) return communityName;
+                        return communityName.substring(0, 10) + '...';
+                      };
                       
                       return (
                         <div 
                           key={post.id} 
-                          className="bg-white rounded-xl shadow-sm border p-4 cursor-pointer hover:shadow-lg transition-all duration-300 flex flex-col h-full"
-                          onClick={() => {
-                            router.push(`/post/${post.id}`);
-                          }}
+                          className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 flex flex-col h-full group"
                         >
-                          {/* Header */}
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex items-center space-x-2 flex-wrap gap-1">
-                              <span className="font-medium text-gray-900 text-sm">{post.postedBy}</span>
-                              <RepBadge score={0} size="sm" />
-                              {post.communityName && (
+                          {/* Header with breadcrumb style */}
+                          <div className="p-4 pb-2">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center text-xs text-gray-500 space-x-1 flex-1 min-w-0">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    router.push(`/community/${post.communityId || ''}`);
+                                    router.push(`/profile/${post.userId}`);
                                   }}
-                                  className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full hover:bg-blue-200 transition-colors"
+                                  className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer truncate"
                                 >
-                                  {post.communityName}
+                                  {post.postedBy}
                                 </button>
-                              )}
-                              {post.submessName && (
-                                <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                                  {post.submessName}
-                                </span>
-                              )}
+                                {post.communityName && (
+                                  <>
+                                    <span className="shrink-0">›</span>
+                                    <span 
+                                      className="px-2 py-0.5 bg-stone-100 text-stone-700 rounded-md text-xs hover:bg-stone-200 cursor-pointer transition-colors truncate"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        router.push(`/community/${post.communityId || ''}`);
+                                      }}
+                                      title={post.communityName}
+                                    >
+                                      {getCommunityDisplay(post.communityName)}
+                                    </span>
+                                  </>
+                                )}
+                                {post.submessName && (
+                                  <>
+                                    <span className="shrink-0">›</span>
+                                    <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md text-xs font-medium truncate">{post.submessName}</span>
+                                  </>
+                                )}
+                              </div>
+                              <span className="text-xs text-gray-400 shrink-0 ml-2">
+                                {isClient ? formatTimeAgo(new Date(post.postedAt)) : 'Recently'}
+                              </span>
                             </div>
-                            <span className="text-xs text-gray-400 shrink-0">
-                              {formatTimeAgo(new Date(post.postedAt))}
-                            </span>
+                            
+                            {/* Title */}
+                            <h3 
+                              className="font-semibold text-gray-900 text-base leading-tight mb-2 cursor-pointer hover:text-blue-600 transition-colors line-clamp-2"
+                              onClick={() => router.push(`/post/${post.id}`)}
+                            >
+                              {post.title}
+                            </h3>
                           </div>
                           
                           {/* Content */}
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 mb-2 text-base leading-tight">{post.title}</h3>
+                          <div className="px-4 pb-3 flex-1">
                             <div className="text-gray-600 text-sm leading-relaxed">
-                              <p>{displayText}</p>
+                              <p className="line-clamp-3">{displayText}</p>
                               {shouldTruncate && (
                                 <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setExpandedPosts(prev => {
-                                      const newSet = new Set(prev);
-                                      if (isExpanded) {
-                                        newSet.delete(post.id);
-                                      } else {
-                                        newSet.add(post.id);
-                                      }
-                                      return newSet;
-                                    });
-                                  }}
-                                  className="text-blue-600 hover:text-blue-700 text-xs mt-1 font-medium"
+                                  onClick={() => router.push(`/post/${post.id}`)}
+                                  className="text-blue-600 hover:text-blue-700 text-xs mt-2 font-medium inline-flex items-center group-hover:underline"
                                 >
-                                  {isExpanded ? 'Show less' : 'Show more'}
+                                  Read more
+                                  <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
                                 </button>
                               )}
                             </div>
                           </div>
                           
                           {/* Actions */}
-                          <div className="flex space-x-2 mt-4 pt-3 border-t border-gray-100">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
+                          <div className="border-t border-gray-100">
+                            <PostInteractions
+                              postId={post.id}
+                              postUserId={post.userId || ''}
+                              onCommentClick={(e) => {
+                                e?.stopPropagation();
                                 router.push(`/post/${post.id}`);
                               }}
-                              className="flex-1 flex items-center justify-center px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-xs"
-                            >
-                              <ChatBubbleLeftIcon className="h-3 w-3 mr-1" />
-                              Comments ({commentCounts[post.id] || 0})
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const chatId = [user?.uid, post.userId].sort().join('_');
-                                router.push(`/chat/${chatId}`);
-                              }}
-                              className="flex-1 flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs"
-                            >
-                              <ChatBubbleLeftIcon className="h-3 w-3 mr-1" />
-                              Chat
-                            </button>
+                              className="mt-0 pt-3 border-t-0"
+                            />
                           </div>
                         </div>
                       );
                       })}
                     </div>
-                    {!showAllPosts && filteredPosts.length > INITIAL_POSTS_COUNT && (
-                      <div className="text-center mt-6">
-                        <button
-                          onClick={() => setShowAllPosts(true)}
-                          className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-lg"
-                        >
-                          Show More ({filteredPosts.length - INITIAL_POSTS_COUNT} more posts)
-                        </button>
-                      </div>
-                    )}
                   </>
                 )}
               </div>
@@ -1327,36 +1467,10 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Floating Go to Top Button - Desktop */}
-        {showScrollToTop && (
-          <button
-            onClick={() => {
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="fixed bottom-8 right-8 w-14 h-14 bg-gray-600 hover:bg-gray-700 text-white rounded-full shadow-lg flex items-center justify-center z-30 transition-all duration-200 hover:scale-110 hidden lg:flex animate-in slide-in-from-bottom-4 duration-300"
-            style={{ boxShadow: '0 6px 25px rgba(75, 85, 99, 0.4)' }}
-          >
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-            </svg>
-          </button>
-        )}
+
       </div>
 
-      {/* Floating Go to Top Button - Mobile */}
-      {showScrollToTop && (
-        <button
-          onClick={() => {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          className="fixed bottom-6 right-6 w-12 h-12 bg-gray-600 hover:bg-gray-700 text-white rounded-full shadow-lg flex items-center justify-center z-30 transition-all duration-200 hover:scale-110 lg:hidden animate-in slide-in-from-bottom-4 duration-300"
-          style={{ boxShadow: '0 4px 20px rgba(75, 85, 99, 0.4)' }}
-        >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-          </svg>
-        </button>
-      )}
+
 
       {/* Help Button - Mobile */}
       <button
@@ -1550,10 +1664,7 @@ export default function DashboardPage() {
           onClose={() => {
             setShowComments(false);
             setSelectedPost(null);
-            // Refresh comment count for this specific post
-            if (selectedPost) {
-              loadCommentCounts([selectedPost]);
-            }
+
           }}
         />
       )}
@@ -1564,7 +1675,7 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">Welcome to CampusMesh!</h2>
+                <h2 className="text-xl font-semibold text-gray-900">Welcome to Campesh!</h2>
                 <button
                   onClick={() => setShowHelp(false)}
                   className="text-gray-500 hover:text-gray-700"
@@ -1576,9 +1687,9 @@ export default function DashboardPage() {
             
             <div className="p-6 space-y-6">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">What is CampusMesh?</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">What is Campesh?</h3>
                 <p className="text-gray-600 mb-4">
-                  CampusMesh is a student community platform designed to help you connect with fellow students, 
+                  Campesh is a student community platform designed to help you connect with fellow students, 
                   share resources, and organize activities within your university community.
                 </p>
               </div>
@@ -1606,7 +1717,7 @@ export default function DashboardPage() {
               </div>
 
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">How to Use CampusMesh</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">How to Use Campesh</h3>
                 <div className="space-y-4">
                   <div className="flex items-start space-x-3">
                     <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">

@@ -56,7 +56,7 @@ export default function Navbar({ userProfile }: NavbarProps) {
               >
                 <Image
                   src="/image.svg"
-                  alt="CampusMesh Logo"
+                  alt="Campesh Logo"
                   width={320}
                   height={64}
                   className="h-14 sm:h-16 md:h-18 w-auto"
@@ -160,7 +160,7 @@ export default function Navbar({ userProfile }: NavbarProps) {
                 >
                   <Image
                     src="/image.svg"
-                    alt="CampusMesh Logo"
+                    alt="Campesh Logo"
                     width={280}
                     height={56}
                     className="h-12 w-auto"

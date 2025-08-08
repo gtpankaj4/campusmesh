@@ -675,7 +675,7 @@ export default function CommunityModerationPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search posts and members..."
-              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
             />
             <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
           </div>
@@ -916,7 +916,7 @@ export default function CommunityModerationPage() {
                       type="text"
                       value={newSubmesh.name}
                       onChange={(e) => setNewSubmesh({ ...newSubmesh, name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                       placeholder="Submesh name"
                     />
                   </div>
@@ -926,7 +926,7 @@ export default function CommunityModerationPage() {
                       type="text"
                       value={newSubmesh.description}
                       onChange={(e) => setNewSubmesh({ ...newSubmesh, description: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                       placeholder="Description"
                     />
                   </div>
@@ -1080,7 +1080,7 @@ export default function CommunityModerationPage() {
                   <input
                     type="text"
                     defaultValue={community?.name}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                   />
                 </div>
                 <div>
@@ -1088,7 +1088,7 @@ export default function CommunityModerationPage() {
                   <textarea
                     defaultValue={community?.description}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                   />
                 </div>
                 <div className="flex justify-end">
@@ -1229,7 +1229,7 @@ export default function CommunityModerationPage() {
                 <textarea
                   value={timeoutReason}
                   onChange={(e) => setTimeoutReason(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                   rows={3}
                   placeholder="Reason for timeout..."
                   required

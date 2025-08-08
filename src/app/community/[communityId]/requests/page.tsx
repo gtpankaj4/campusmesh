@@ -262,29 +262,29 @@ export default function CommunityRequestsPage() {
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       
-      <div className="max-w-6xl mx-auto px-6 py-8 pt-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 pt-6 sm:pt-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center space-x-4">
+        <div className="flex items-center justify-between mb-6 sm:mb-8 gap-4">
+          <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
             <button
               onClick={() => router.back()}
-              className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+              className="flex-shrink-0 p-2 text-gray-600 hover:text-gray-900 transition-colors hover:bg-gray-100 rounded-lg"
             >
               <ArrowLeftIcon className="h-5 w-5" />
-              <span>Back</span>
             </button>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Join Requests</h1>
-              <p className="text-gray-600 mt-1">{community.name}</p>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">Join Requests</h1>
+              <p className="text-gray-600 mt-1 text-sm sm:text-base truncate">{community.name}</p>
             </div>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
             <button
               onClick={() => router.push(`/community/${communityId}/moderate`)}
-              className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              className="flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm sm:text-base"
             >
               <CogIcon className="h-4 w-4" />
-              <span>Moderate Community</span>
+              <span className="hidden sm:inline">Moderate Community</span>
+              <span className="sm:hidden">Moderate</span>
             </button>
           </div>
         </div>

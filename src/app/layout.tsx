@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import "./globals.css";
 import PageTransition from "@/components/PageTransition";
-import ConnectionStatus from '@/components/ConnectionStatus';
+import ConnectionStatus from "@/components/ConnectionStatus";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -11,8 +11,9 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "CampusMesh - Campus Community Platform",
-  description: "Campus community platform for rides, housing, books, and help",
+  title: "Campesh - Your campus, your network",
+  description:
+    "Your campus community platform for connecting, sharing, and building networks",
 };
 
 export default function RootLayout({
@@ -22,13 +23,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${poppins.variable} font-sans antialiased`}
-      >
+      <head>
+        <link
+          rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css"
+        />
+      </head>
+      <body className={`${poppins.variable} font-sans antialiased`}>
         <ConnectionStatus />
-        <PageTransition>
-          {children}
-        </PageTransition>
+        <PageTransition>{children}</PageTransition>
       </body>
     </html>
   );

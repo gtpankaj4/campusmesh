@@ -150,14 +150,13 @@ export default function PostPage() {
     <div className="min-h-screen bg-gray-50">
       <Navbar userProfile={userProfile} />
       
-      <div className="max-w-7xl mx-auto px-6 py-8 pt-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 pt-6 sm:pt-8">
         {/* Back Button */}
         <button
           onClick={() => router.back()}
-          className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+          className="p-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors hover:bg-gray-100 rounded-lg"
         >
           <ArrowLeftIcon className="h-5 w-5" />
-          <span>Back</span>
         </button>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

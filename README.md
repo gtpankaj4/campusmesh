@@ -1,4 +1,4 @@
-# CampusMesh - Advanced Campus Community Platform
+# Campesh - Your campus, your network
 
 A comprehensive campus community platform built with Next.js 14, TypeScript, and Tailwind CSS, featuring reputation systems, private communities, real-time messaging, and anti-spam measures.
 
@@ -65,7 +65,7 @@ A comprehensive campus community platform built with Next.js 14, TypeScript, and
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd campusmess
+cd campesh
 ```
 
 2. Install dependencies:
