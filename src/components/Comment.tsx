@@ -16,7 +16,7 @@ import {
 import { db, auth } from "@/lib/firebase";
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import RepBadge from "./RepBadge";
-import { getUserDisplayName } from "@/lib/userUtils";
+import { getUserDisplayName, UserData } from "@/lib/userUtils";
 
 interface Comment {
   id: string;
@@ -69,7 +69,7 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
       // Get user profile for username with better fallback
       const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
-      const userData = userSnap.exists() ? userSnap.data() : null;
+      const userData: UserData | null = userSnap.exists() ? { uid: user.uid, ...userSnap.data() } as UserData : null;
 
       const username = getUserDisplayName(userData, user, user.uid);
 
