@@ -6,6 +6,7 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { generateChatId } from '@/lib/chatUtils';
 import { ref, set, get } from 'firebase/database';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { getUserDisplayName } from '@/lib/userUtils';
 
 interface ChatButtonProps {
   postCreatorId: string;
@@ -43,17 +44,16 @@ export default function ChatButton({ postCreatorId, className = '', children }: 
       ]);
 
       // Enhanced name resolution with better fallbacks
-      const currentUserName = currentUserSnap.exists() ? 
-        (currentUserSnap.data()?.username || currentUserSnap.data()?.displayName || user.email?.split('@')[0] || user.email) : 
-        (user.email?.split('@')[0] || user.email || 'Unknown User');
+      const currentUserData = currentUserSnap.exists() ? currentUserSnap.data() : null;
+      const currentUserName = getUserDisplayName(currentUserData, user, user.uid);
       
       let otherUserName = 'Unknown User';
       let otherUserEmail = 'unknown@email.com';
       
       if (otherUserSnap.exists()) {
         const otherData = otherUserSnap.data();
-        otherUserName = otherData?.username || otherData?.displayName || otherData?.email?.split('@')[0] || otherData?.email || 'Unknown User';
-        otherUserEmail = otherData?.email || 'unknown@email.com';
+        otherUserName = getUserDisplayName(otherData, null, postCreatorId);
+        otherUserEmail = otherData?.email || `user_${postCreatorId}@campesh.com`;
       } else {
         // If user doesn't exist in Firestore, try to create a basic profile
         console.warn(`User ${postCreatorId} not found in Firestore, creating basic profile`);
@@ -71,6 +71,7 @@ export default function ChatButton({ postCreatorId, className = '', children }: 
           console.log(`✅ Created basic Firestore profile for ${postCreatorId}`);
         } catch (error) {
           console.error('Failed to create basic Firestore profile:', error);
+          otherUserName = `User_${postCreatorId.slice(-6)}`;
         }
       }
 

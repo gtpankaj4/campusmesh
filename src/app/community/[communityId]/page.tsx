@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { collection, doc, getDoc, query, where, orderBy, onSnapshot, updateDoc, increment, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, addDoc, query, where, orderBy, onSnapshot, updateDoc, increment, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { ArrowLeftIcon, UserGroupIcon, PlusIcon } from "@heroicons/react/24/outline";
 import Navbar from "@/components/Navbar";
@@ -21,6 +21,13 @@ interface Community {
     description: string;
   }>;
   members: { [key: string]: boolean };
+  enrollmentQuestions?: Array<{
+    id: string;
+    question: string;
+    type: 'text' | 'select';
+    options?: string[];
+    required: boolean;
+  }>;
 }
 
 interface Post {
@@ -47,6 +54,8 @@ export default function CommunityPage() {
   const [isMember, setIsMember] = useState(false);
   const [joining, setJoining] = useState(false);
   const [activeSubmesh, setActiveSubmesh] = useState<string>('All');
+  const [showEnrollmentForm, setShowEnrollmentForm] = useState(false);
+  const [enrollmentAnswers, setEnrollmentAnswers] = useState<{ [key: string]: string }>({});
   const router = useRouter();
   const params = useParams();
   const communityId = params.communityId as string;
@@ -88,9 +97,28 @@ export default function CommunityPage() {
         const communityData = { id: communitySnap.id, ...communitySnap.data() } as Community;
         setCommunity(communityData);
         
-        // Check if user is a member
-        if (user && communityData.members && communityData.members[user.uid]) {
-          setIsMember(true);
+        if (user) {
+          // Check membership using the same logic as Community component
+          let userIsMember = false;
+          
+          // Check in community.members object
+          if (communityData.members && typeof communityData.members === 'object') {
+            userIsMember = communityData.members[user.uid] !== undefined;
+          }
+          
+          // Double-check in user's communities collection
+          if (!userIsMember) {
+            try {
+              const userCommunitiesRef = collection(db, 'users', user.uid, 'communities');
+              const userCommunitiesSnap = await getDocs(userCommunitiesRef);
+              const userCommunity = userCommunitiesSnap.docs.find(doc => doc.data().communityId === communityId);
+              userIsMember = !!userCommunity;
+            } catch (error) {
+              console.error('Error checking user communities:', error);
+            }
+          }
+          
+          setIsMember(userIsMember);
         }
       }
     } catch (error) {
@@ -134,33 +162,62 @@ export default function CommunityPage() {
     }
   };
 
+  const handleJoinClick = () => {
+    if (!user || !community) return;
+    
+    // Check if community has enrollment questions
+    if (community.isPrivate && community.enrollmentQuestions && community.enrollmentQuestions.length > 0) {
+      setShowEnrollmentForm(true);
+    } else {
+      joinCommunity();
+    }
+  };
+
   const joinCommunity = async () => {
     if (!user || !community || joining) return;
     
     setJoining(true);
     try {
-      // Add user to community members
-      const communityRef = doc(db, 'communities', communityId);
-      const updatedMembers = { ...community.members, [user.uid]: true };
-      
-      await updateDoc(communityRef, {
-        members: updatedMembers,
-        memberCount: increment(1)
-      });
-      
-      // Add community to user's communities
-      const userCommunityRef = doc(db, 'users', user.uid, 'communities', communityId);
-      await setDoc(userCommunityRef, {
-        communityId: communityId,
-        communityName: community.name,
-        role: 'member',
-        joinedAt: serverTimestamp()
-      });
-      
-      setIsMember(true);
-      setCommunity(prev => prev ? { ...prev, members: updatedMembers, memberCount: prev.memberCount + 1 } : null);
+      if (community.isPrivate && community.enrollmentQuestions && community.enrollmentQuestions.length > 0) {
+        // For private communities with enrollment questions, create a join request
+        const joinRequestsRef = collection(db, 'communities', communityId, 'joinRequests');
+        await addDoc(joinRequestsRef, {
+          userId: user.uid,
+          userEmail: user.email,
+          username: userProfile?.username || user.email?.split('@')[0] || 'User',
+          answers: enrollmentAnswers,
+          requestedAt: serverTimestamp(),
+          status: 'pending'
+        });
+        
+        alert('Your join request has been submitted! Community admins will review it soon.');
+        setShowEnrollmentForm(false);
+        setEnrollmentAnswers({});
+      } else {
+        // For public communities or private without questions, join directly
+        const communityRef = doc(db, 'communities', communityId);
+        const updatedMembers = { ...community.members, [user.uid]: true };
+        
+        await updateDoc(communityRef, {
+          members: updatedMembers,
+          memberCount: increment(1)
+        });
+        
+        // Add community to user's communities
+        const userCommunityRef = doc(db, 'users', user.uid, 'communities', communityId);
+        await setDoc(userCommunityRef, {
+          communityId: communityId,
+          communityName: community.name,
+          role: 'member',
+          joinedAt: serverTimestamp()
+        });
+        
+        setIsMember(true);
+        setCommunity(prev => prev ? { ...prev, members: updatedMembers, memberCount: prev.memberCount + 1 } : null);
+      }
     } catch (error) {
       console.error('Error joining community:', error);
+      alert('Error joining community. Please try again.');
     } finally {
       setJoining(false);
     }
@@ -224,7 +281,7 @@ export default function CommunityPage() {
             
             {!isMember ? (
               <button
-                onClick={joinCommunity}
+                onClick={handleJoinClick}
                 disabled={joining}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center"
               >
@@ -271,7 +328,7 @@ export default function CommunityPage() {
               This is a private mesh. You need to join to see posts and participate in discussions.
             </p>
             <button
-              onClick={joinCommunity}
+              onClick={handleJoinClick}
               disabled={joining}
               className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center mx-auto"
             >
@@ -369,6 +426,94 @@ export default function CommunityPage() {
           </>
         )}
       </div>
+
+      {/* Enrollment Form Modal */}
+      {showEnrollmentForm && community?.enrollmentQuestions && (
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl w-full max-w-md max-h-[80vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Join {community.name}</h3>
+                <button
+                  onClick={() => {
+                    setShowEnrollmentForm(false);
+                    setEnrollmentAnswers({});
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <p className="text-gray-600 mb-6">
+                Please answer the following questions to join this private mesh:
+              </p>
+              
+              <form onSubmit={(e) => { e.preventDefault(); joinCommunity(); }} className="space-y-4">
+                {community.enrollmentQuestions.map((question) => (
+                  <div key={question.id}>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {question.question}
+                      {question.required && <span className="text-red-500 ml-1">*</span>}
+                    </label>
+                    
+                    {question.type === 'text' ? (
+                      <textarea
+                        value={enrollmentAnswers[question.id] || ''}
+                        onChange={(e) => setEnrollmentAnswers(prev => ({
+                          ...prev,
+                          [question.id]: e.target.value
+                        }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                        rows={3}
+                        required={question.required}
+                        placeholder="Your answer..."
+                      />
+                    ) : question.type === 'select' && question.options ? (
+                      <select
+                        value={enrollmentAnswers[question.id] || ''}
+                        onChange={(e) => setEnrollmentAnswers(prev => ({
+                          ...prev,
+                          [question.id]: e.target.value
+                        }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                        required={question.required}
+                      >
+                        <option value="">Select an option</option>
+                        {question.options.map((option, index) => (
+                          <option key={index} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    ) : null}
+                  </div>
+                ))}
+                
+                <div className="flex space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEnrollmentForm(false);
+                      setEnrollmentAnswers({});
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={joining}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {joining ? 'Submitting...' : 'Submit Request'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

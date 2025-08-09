@@ -16,6 +16,7 @@ import {
 import { db, auth } from "@/lib/firebase";
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import RepBadge from "./RepBadge";
+import { getUserDisplayName } from "@/lib/userUtils";
 
 interface Comment {
   id: string;
@@ -65,16 +66,18 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
     try {
       // Add comment
       const commentsRef = collection(db, "posts", postId, "comments");
-      // Get user profile for username
+      // Get user profile for username with better fallback
       const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
       const userData = userSnap.exists() ? userSnap.data() : null;
+
+      const username = getUserDisplayName(userData, user, user.uid);
 
       await addDoc(commentsRef, {
         text: newComment.trim(),
         userId: user.uid,
         userEmail: user.email,
-        username: userData?.username || user.email?.split("@")[0] || "User",
+        username: username,
         timestamp: serverTimestamp(),
         userRep: userData?.reputation || 0,
       });
@@ -108,7 +111,7 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
           await createCommentNotification(
             postUserId,
             user.uid,
-            userData?.username || user.email?.split("@")[0] || "Someone",
+            username,
             postTitle
           );
         } catch (error) {
