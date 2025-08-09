@@ -6,7 +6,7 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { generateChatId } from '@/lib/chatUtils';
 import { ref, set, get } from 'firebase/database';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { getUserDisplayName } from '@/lib/userUtils';
+import { getUserDisplayName, UserData } from '@/lib/userUtils';
 
 interface ChatButtonProps {
   postCreatorId: string;
@@ -44,14 +44,15 @@ export default function ChatButton({ postCreatorId, className = '', children }: 
       ]);
 
       // Enhanced name resolution with better fallbacks
-      const currentUserData = currentUserSnap.exists() ? currentUserSnap.data() : null;
+      const currentUserData: UserData | null = currentUserSnap.exists() ? 
+        { uid: user.uid, ...currentUserSnap.data() } as UserData : null;
       const currentUserName = getUserDisplayName(currentUserData, user, user.uid);
       
       let otherUserName = 'Unknown User';
       let otherUserEmail = 'unknown@email.com';
       
       if (otherUserSnap.exists()) {
-        const otherData = otherUserSnap.data();
+        const otherData: UserData = { uid: postCreatorId, ...otherUserSnap.data() } as UserData;
         otherUserName = getUserDisplayName(otherData, null, postCreatorId);
         otherUserEmail = otherData?.email || `user_${postCreatorId}@campesh.com`;
       } else {

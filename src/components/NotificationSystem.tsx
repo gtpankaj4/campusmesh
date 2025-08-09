@@ -1,20 +1,20 @@
-'`use client';
+"`use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { auth, realtimeDb, db } from '@/lib/firebase';
-import { useAuthState } from 'react-firebase-hooks/auth';
-import { ref, onValue, off, set, remove } from 'firebase/database';
-import { doc, getDoc } from 'firebase/firestore';
-import { BellIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { auth, realtimeDb, db } from "@/lib/firebase";
+import { useAuthState } from "react-firebase-hooks/auth";
+import { ref, onValue, off, set, remove } from "firebase/database";
+import { doc, getDoc } from "firebase/firestore";
+import { BellIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
 
 dayjs.extend(relativeTime);
 
 interface Notification {
   id: string;
-  type: 'message' | 'post' | 'comment' | 'mention' | 'join_request';
+  type: "message" | "post" | "comment" | "mention" | "join_request";
   title: string;
   message: string;
   fromUserId?: string;
@@ -45,71 +45,80 @@ export default function NotificationSystem() {
       const notificationsData = snapshot.val();
       if (notificationsData) {
         const notificationArray: Notification[] = Object.keys(notificationsData)
-          .map(key => ({
+          .map((key) => ({
             id: key,
-            ...notificationsData[key]
+            ...notificationsData[key],
           }))
           .sort((a, b) => b.timestamp - a.timestamp);
-        
+
         setNotifications(notificationArray);
-        setUnreadCount(notificationArray.filter(n => !n.read).length);
+        setUnreadCount(notificationArray.filter((n) => !n.read).length);
       } else {
         setNotifications([]);
         setUnreadCount(0);
       }
     });
 
-    return () => off(notificationsRef, 'value', unsubscribe);
+    return () => off(notificationsRef, "value", unsubscribe);
   }, [user]);
 
   const markAsRead = async (notificationId: string) => {
     if (!user) return;
-    
+
     try {
-      const notificationRef = ref(realtimeDb, `notifications/${user.uid}/${notificationId}/read`);
+      const notificationRef = ref(
+        realtimeDb,
+        `notifications/${user.uid}/${notificationId}/read`
+      );
       await set(notificationRef, true);
     } catch (error) {
-      console.error('Error marking notification as read:', error);
+      console.error("Error marking notification as read:", error);
     }
   };
 
   const deleteNotification = async (notificationId: string) => {
     if (!user) return;
-    
+
     try {
-      const notificationRef = ref(realtimeDb, `notifications/${user.uid}/${notificationId}`);
+      const notificationRef = ref(
+        realtimeDb,
+        `notifications/${user.uid}/${notificationId}`
+      );
       await remove(notificationRef);
     } catch (error) {
-      console.error('Error deleting notification:', error);
+      console.error("Error deleting notification:", error);
     }
   };
 
   const handleNotificationClick = (notification: Notification) => {
     markAsRead(notification.id);
-    
+
     // Navigate based on notification type
-    if (notification.type === 'message' && notification.data?.chatId) {
+    if (notification.type === "message" && notification.data?.chatId) {
       window.location.href = `/chat/${notification.data.chatId}`;
-    } else if (notification.type === 'post' && notification.data?.communityId) {
+    } else if (notification.type === "post" && notification.data?.communityId) {
       window.location.href = `/dashboard`;
-    } else if (notification.type === 'join_request' && notification.data?.communityId) {
+    } else if (
+      notification.type === "join_request" &&
+      notification.data?.communityId
+    ) {
       // Redirect to moderation panel with requests tab
       window.location.href = `/community/${notification.data.communityId}/moderate?tab=requests`;
     }
-    
+
     setShowNotifications(false);
   };
 
   const markAllAsRead = async () => {
     if (!user) return;
-    
-    const unreadNotifications = notifications.filter(n => !n.read);
-    const promises = unreadNotifications.map(n => markAsRead(n.id));
-    
+
+    const unreadNotifications = notifications.filter((n) => !n.read);
+    const promises = unreadNotifications.map((n) => markAsRead(n.id));
+
     try {
       await Promise.all(promises);
     } catch (error) {
-      console.error('Error marking all as read:', error);
+      console.error("Error marking all as read:", error);
     }
   };
 
@@ -119,14 +128,16 @@ export default function NotificationSystem() {
     <div className="relative">
       {/* Notification Bell */}
       <button
-        onClick={() => router.push('/notifications')}
+        onClick={() => router.push("/notifications")}
         className="relative p-2 text-gray-600 hover:text-gray-800 transition-colors rounded-lg hover:bg-gray-100"
         title="View all notifications"
       >
         <BellIcon className="w-6 h-6" />
         {unreadCount > 0 && (
           <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center animate-pulse ring-2 ring-red-200">
-            <span className="text-white text-xs font-bold">{unreadCount > 9 ? '9+' : unreadCount}</span>
+            <span className="text-white text-xs font-bold">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
           </div>
         )}
       </button>
@@ -165,18 +176,25 @@ export default function NotificationSystem() {
                   key={notification.id}
                   onClick={() => handleNotificationClick(notification)}
                   className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
-                    !notification.read ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                    !notification.read
+                      ? "bg-blue-50 border-l-4 border-l-blue-500"
+                      : ""
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-2">
-                        <div className={`w-2 h-2 rounded-full ${
-                          notification.type === 'message' ? 'bg-green-500' :
-                          notification.type === 'post' ? 'bg-blue-500' :
-                          notification.type === 'comment' ? 'bg-yellow-500' :
-                          'bg-purple-500'
-                        }`} />
+                        <div
+                          className={`w-2 h-2 rounded-full ${
+                            notification.type === "message"
+                              ? "bg-green-500"
+                              : notification.type === "post"
+                              ? "bg-blue-500"
+                              : notification.type === "comment"
+                              ? "bg-yellow-500"
+                              : "bg-purple-500"
+                          }`}
+                        />
                         <h4 className="font-medium text-sm text-gray-800">
                           {notification.title}
                         </h4>
@@ -216,31 +234,34 @@ export const createJoinRequestNotification = async (
   communityName: string
 ) => {
   await createNotification(moderatorId, {
-    type: 'join_request',
-    title: 'Community Join Request',
+    type: "join_request",
+    title: "Community Join Request",
     message: `${requesterName} requested to join ${communityName}`,
     fromUserId: requesterId,
     fromUserName: requesterName,
     read: false,
-    data: { communityName }
+    data: { communityName },
   });
 };
 
 // Utility functions to create notifications
 export const createNotification = async (
   userId: string,
-  notification: Omit<Notification, 'id' | 'timestamp'>
+  notification: Omit<Notification, "id" | "timestamp">
 ) => {
   try {
     const notificationsRef = ref(realtimeDb, `notifications/${userId}`);
-    const newNotificationRef = ref(realtimeDb, `notifications/${userId}/${Date.now()}`);
-    
+    const newNotificationRef = ref(
+      realtimeDb,
+      `notifications/${userId}/${Date.now()}`
+    );
+
     await set(newNotificationRef, {
       ...notification,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   } catch (error) {
-    console.error('Error creating notification:', error);
+    console.error("Error creating notification:", error);
   }
 };
 
@@ -251,24 +272,28 @@ export const createMessageNotification = async (
   chatId: string
 ) => {
   if (receiverId === senderId) return; // Don't notify self
-  
+
   try {
     // Always create notification for proper unread tracking, but check if user is viewing chat
-    const isViewingChat = typeof window !== 'undefined' && window.location.pathname === `/chat/${chatId}`;
-    
+    const isViewingChat =
+      typeof window !== "undefined" &&
+      window.location.pathname === `/chat/${chatId}`;
+
     await createNotification(receiverId, {
-      type: 'message',
-      title: '💬 New Message',
+      type: "message",
+      title: "💬 New Message",
       message: `${senderName} sent you a message!`,
       fromUserId: senderId,
       fromUserName: senderName,
       read: isViewingChat, // Mark as read if user is viewing the chat
-      data: { chatId }
+      data: { chatId },
     });
-    
-    console.log(`📬 Message notification created for user ${receiverId} (read: ${isViewingChat})`);
+
+    console.log(
+      `📬 Message notification created for user ${receiverId} (read: ${isViewingChat})`
+    );
   } catch (error) {
-    console.error('Error creating message notification:', error);
+    console.error("Error creating message notification:", error);
     throw error; // Re-throw to allow caller to handle
   }
 };
@@ -281,19 +306,19 @@ export const createPostNotification = async (
   postTitle: string
 ) => {
   const promises = userIds
-    .filter(uid => uid !== postCreatorId) // Don't notify the creator
-    .map(userId => 
+    .filter((uid) => uid !== postCreatorId) // Don't notify the creator
+    .map((userId) =>
       createNotification(userId, {
-        type: 'post',
-        title: 'New Post',
+        type: "post",
+        title: "New Post",
         message: `${postCreatorName} posted "${postTitle}" in ${communityName}`,
         fromUserId: postCreatorId,
         fromUserName: postCreatorName,
         read: false,
-        data: { communityName }
+        data: { communityName },
       })
     );
-  
+
   await Promise.all(promises);
 };
 
@@ -304,13 +329,13 @@ export const createCommentNotification = async (
   postTitle: string
 ) => {
   if (postOwnerId === commenterId) return; // Don't notify self
-  
+
   await createNotification(postOwnerId, {
-    type: 'comment',
-    title: 'New Comment',
+    type: "comment",
+    title: "New Comment",
     message: `${commenterName} commented on your post "${postTitle}"`,
     fromUserId: commenterId,
     fromUserName: commenterName,
-    read: false
+    read: false,
   });
 };
