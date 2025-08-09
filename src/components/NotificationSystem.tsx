@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { auth, realtimeDb, db } from "@/lib/firebase";
+import { auth, realtimeDb } from "@/lib/firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { ref, onValue, off, set, remove } from "firebase/database";
-import { doc, getDoc } from "firebase/firestore";
 import { BellIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -14,13 +13,25 @@ dayjs.extend(relativeTime);
 
 interface Notification {
   id: string;
-  type: "message" | "post" | "comment" | "mention" | "join_request";
+  type:
+    | "join_request"
+    | "message"
+    | "system"
+    | "community_update"
+    | "post"
+    | "comment"
+    | "mention";
   title: string;
   message: string;
   fromUserId?: string;
   fromUserName?: string;
   timestamp: number;
   read: boolean;
+  userId?: string;
+  communityId?: string;
+  communityName?: string;
+  senderName?: string;
+  actionUrl?: string;
   data?: {
     chatId?: string;
     postId?: string;
@@ -94,16 +105,17 @@ export default function NotificationSystem() {
     markAsRead(notification.id);
 
     // Navigate based on notification type
-    if (notification.type === "message" && notification.data?.chatId) {
-      window.location.href = `/chat/${notification.data.chatId}`;
-    } else if (notification.type === "post" && notification.data?.communityId) {
-      window.location.href = `/dashboard`;
-    } else if (
-      notification.type === "join_request" &&
-      notification.data?.communityId
-    ) {
+    if (notification.type === "message") {
+      router.push("/chat");
+    } else if (notification.type === "post") {
+      router.push("/dashboard");
+    } else if (notification.type === "join_request") {
       // Redirect to moderation panel with requests tab
-      window.location.href = `/community/${notification.data.communityId}/moderate?tab=requests`;
+      const communityId =
+        notification.data?.communityId || notification.communityId;
+      if (communityId) {
+        router.push(`/community/${communityId}/moderate?tab=requests`);
+      }
     }
 
     setShowNotifications(false);
@@ -232,7 +244,7 @@ export const createJoinRequestNotification = async (
   requesterId: string,
   requesterName: string,
   communityName: string
-) => {
+): Promise<void> => {
   await createNotification(moderatorId, {
     type: "join_request",
     title: "Community Join Request",
@@ -248,7 +260,7 @@ export const createJoinRequestNotification = async (
 export const createNotification = async (
   userId: string,
   notification: Omit<Notification, "id" | "timestamp">
-) => {
+): Promise<void> => {
   try {
     const notificationsRef = ref(realtimeDb, `notifications/${userId}`);
     const newNotificationRef = ref(
@@ -270,7 +282,7 @@ export const createMessageNotification = async (
   senderId: string,
   senderName: string,
   chatId: string
-) => {
+): Promise<void> => {
   if (receiverId === senderId) return; // Don't notify self
 
   try {
@@ -304,7 +316,7 @@ export const createPostNotification = async (
   postCreatorName: string,
   communityName: string,
   postTitle: string
-) => {
+): Promise<void> => {
   const promises = userIds
     .filter((uid) => uid !== postCreatorId) // Don't notify the creator
     .map((userId) =>
@@ -327,7 +339,7 @@ export const createCommentNotification = async (
   commenterId: string,
   commenterName: string,
   postTitle: string
-) => {
+): Promise<void> => {
   if (postOwnerId === commenterId) return; // Don't notify self
 
   await createNotification(postOwnerId, {
