@@ -651,7 +651,7 @@ export default function CommunityModerationPage() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 space-y-4 sm:space-y-0">
           <div className="flex items-center space-x-4">
             <button
-              onClick={() => router.push('/posts')}
+              onClick={() => router.push(`/community/${communityId}`)}
               className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
             >
               <ArrowLeftIcon className="h-5 w-5" />

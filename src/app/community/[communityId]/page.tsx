@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { collection, doc, getDoc, getDocs, addDoc, query, where, orderBy, onSnapshot, updateDoc, increment, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { ArrowLeftIcon, UserGroupIcon, PlusIcon } from "@heroicons/react/24/outline";
+import { ArrowLeftIcon, UserGroupIcon, PlusIcon, CogIcon } from "@heroicons/react/24/outline";
 import Navbar from "@/components/Navbar";
 import PostInteractions from "@/components/PostInteractions";
 import RepBadge from "@/components/RepBadge";
@@ -21,6 +21,7 @@ interface Community {
     description: string;
   }>;
   members: { [key: string]: boolean };
+  moderators?: { [key: string]: boolean };
   enrollmentQuestions?: Array<{
     id: string;
     question: string;
@@ -52,6 +53,7 @@ export default function CommunityPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [isMember, setIsMember] = useState(false);
+  const [userRole, setUserRole] = useState<'member' | 'moderator' | 'admin' | null>(null);
   const [joining, setJoining] = useState(false);
   const [activeSubmesh, setActiveSubmesh] = useState<string>('All');
   const [showEnrollmentForm, setShowEnrollmentForm] = useState(false);
@@ -65,8 +67,8 @@ export default function CommunityPage() {
       if (user) {
         setUser(user);
         await loadUserProfile(user.uid);
-        await loadCommunity();
-        await loadCommunityPosts();
+        await loadCommunity(user); // Pass user directly to avoid timing issues
+        loadCommunityPosts();
       } else {
         router.push("/login");
       }
@@ -75,6 +77,13 @@ export default function CommunityPage() {
 
     return () => unsubscribe();
   }, [router, communityId]);
+
+  // Re-check membership when community data changes
+  useEffect(() => {
+    if (user && community) {
+      checkMembership(user, community);
+    }
+  }, [user, community]);
 
   const loadUserProfile = async (userId: string) => {
     try {
@@ -88,7 +97,7 @@ export default function CommunityPage() {
     }
   };
 
-  const loadCommunity = async () => {
+  const loadCommunity = async (currentUser?: User) => {
     try {
       const communityRef = doc(db, 'communities', communityId);
       const communitySnap = await getDoc(communityRef);
@@ -97,32 +106,66 @@ export default function CommunityPage() {
         const communityData = { id: communitySnap.id, ...communitySnap.data() } as Community;
         setCommunity(communityData);
         
-        if (user) {
-          // Check membership using the same logic as Community component
-          let userIsMember = false;
-          
-          // Check in community.members object
-          if (communityData.members && typeof communityData.members === 'object') {
-            userIsMember = communityData.members[user.uid] !== undefined;
-          }
-          
-          // Double-check in user's communities collection
-          if (!userIsMember) {
-            try {
-              const userCommunitiesRef = collection(db, 'users', user.uid, 'communities');
-              const userCommunitiesSnap = await getDocs(userCommunitiesRef);
-              const userCommunity = userCommunitiesSnap.docs.find(doc => doc.data().communityId === communityId);
-              userIsMember = !!userCommunity;
-            } catch (error) {
-              console.error('Error checking user communities:', error);
-            }
-          }
-          
-          setIsMember(userIsMember);
+        // Use the passed user or the state user
+        const userToCheck = currentUser || user;
+        
+        if (userToCheck) {
+          await checkMembership(userToCheck, communityData);
         }
       }
     } catch (error) {
       console.error('Error loading community:', error);
+    }
+  };
+
+  const checkMembership = async (currentUser: User, communityData: Community) => {
+    try {
+      let userIsMember = false;
+      let role: 'member' | 'moderator' | 'admin' | null = null;
+      
+      // First check in community.members object
+      if (communityData.members && typeof communityData.members === 'object') {
+        userIsMember = communityData.members[currentUser.uid] !== undefined;
+      }
+      
+      // Check if user is a moderator
+      if (communityData.moderators && communityData.moderators[currentUser.uid]) {
+        userIsMember = true;
+        role = 'moderator';
+      }
+      
+      // Get detailed role from user's communities collection
+      if (userIsMember || !userIsMember) { // Always check for accurate role info
+        try {
+          const userCommunitiesRef = collection(db, 'users', currentUser.uid, 'communities');
+          const userCommunitiesSnap = await getDocs(userCommunitiesRef);
+          const userCommunity = userCommunitiesSnap.docs.find(doc => doc.data().communityId === communityId);
+          
+          if (userCommunity) {
+            userIsMember = true;
+            const userData = userCommunity.data();
+            role = userData.role || 'member';
+          }
+        } catch (error) {
+          console.error('Error checking user communities:', error);
+        }
+      }
+      
+      console.log('Membership check result:', { 
+        userId: currentUser.uid, 
+        communityId, 
+        isMember: userIsMember,
+        role,
+        membersObject: communityData.members,
+        moderatorsObject: communityData.moderators
+      });
+      
+      setIsMember(userIsMember);
+      setUserRole(role);
+    } catch (error) {
+      console.error('Error checking membership:', error);
+      setIsMember(false);
+      setUserRole(null);
     }
   };
 
@@ -131,8 +174,7 @@ export default function CommunityPage() {
       const postsRef = collection(db, 'posts');
       const q = query(
         postsRef, 
-        where('communityId', '==', communityId),
-        orderBy('createdAt', 'desc')
+        where('communityId', '==', communityId)
       );
 
       const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -153,6 +195,15 @@ export default function CommunityPage() {
             submessName: data.submessName
           };
         });
+        
+        // Sort manually by createdAt since we can't use orderBy with where on different fields
+        communityPosts.sort((a, b) => {
+          const aTime = new Date(a.postedAt).getTime();
+          const bTime = new Date(b.postedAt).getTime();
+          return bTime - aTime; // Descending order (newest first)
+        });
+        
+        console.log('Loaded community posts:', communityPosts.length, 'posts for community:', communityId);
         setPosts(communityPosts);
       });
 
@@ -267,32 +318,45 @@ export default function CommunityPage() {
     <div className="min-h-screen bg-gray-50">
       <Navbar userProfile={userProfile} />
       
-      <div className="max-w-4xl mx-auto px-4 py-6 pt-8">
+      <div className="max-w-7xl mx-auto px-6 py-6 pt-8">
         {/* Header */}
         <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <button
-              onClick={() => router.back()}
+              onClick={() => router.push('/community')}
               className="flex items-center text-gray-600 hover:text-gray-900"
             >
               <ArrowLeftIcon className="h-5 w-5 mr-2" />
               Back
             </button>
             
-            {!isMember ? (
-              <button
-                onClick={handleJoinClick}
-                disabled={joining}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center"
-              >
-                <PlusIcon className="h-4 w-4 mr-2" />
-                {joining ? 'Joining...' : 'Join Mesh'}
-              </button>
-            ) : (
-              <div className="bg-green-100 text-green-800 px-4 py-2 rounded-lg flex items-center">
-                <span className="text-sm font-medium">✓ Joined</span>
-              </div>
-            )}
+            <div className="flex items-center space-x-3">
+              {!isMember ? (
+                <button
+                  onClick={handleJoinClick}
+                  disabled={joining}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center"
+                >
+                  <PlusIcon className="h-4 w-4 mr-2" />
+                  {joining ? 'Joining...' : 'Join Mesh'}
+                </button>
+              ) : (
+                <>
+                  <div className="bg-green-100 text-green-800 px-4 py-2 rounded-lg flex items-center">
+                    <span className="text-sm font-medium">✓ Joined</span>
+                  </div>
+                  {(userRole === 'moderator' || userRole === 'admin') && (
+                    <button
+                      onClick={() => router.push(`/community/${communityId}/moderate`)}
+                      className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center"
+                    >
+                      <CogIcon className="h-4 w-4 mr-2" />
+                      Moderate
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
           
           <div className="flex items-start space-x-4">
@@ -309,7 +373,15 @@ export default function CommunityPage() {
                 {isMember && (
                   <>
                     <span>•</span>
-                    <span className="text-green-600 font-medium">Member</span>
+                    <span className={`font-medium ${
+                      userRole === 'admin' ? 'text-purple-600' :
+                      userRole === 'moderator' ? 'text-blue-600' :
+                      'text-green-600'
+                    }`}>
+                      {userRole === 'admin' ? 'Admin' :
+                       userRole === 'moderator' ? 'Moderator' :
+                       'Member'}
+                    </span>
                   </>
                 )}
               </div>
@@ -317,8 +389,9 @@ export default function CommunityPage() {
           </div>
         </div>
 
-        {/* Private Mesh Access Check */}
+        {/* Content Access Logic */}
         {community.isPrivate && !isMember ? (
+          // Private community and user is not a member - show join prompt
           <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <UserGroupIcon className="h-8 w-8 text-gray-400" />
@@ -337,6 +410,7 @@ export default function CommunityPage() {
             </button>
           </div>
         ) : (
+          // Public community OR user is a member - show content
           <>
             {/* Submesh Filters */}
             {community.submesses && community.submesses.length > 0 && (
@@ -372,8 +446,42 @@ export default function CommunityPage() {
               </div>
             )}
 
+            {/* Community Info and Submeshes */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+              {/* About Section */}
+              <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">About</h3>
+                <p className="text-gray-700 mb-4">{community.description}</p>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium text-gray-900">Members:</span>
+                    <span className="ml-2 text-gray-600">{community.memberCount}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-900">Type:</span>
+                    <span className="ml-2 text-gray-600">{community.isPrivate ? 'Private' : 'Public'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Submeshes Section */}
+              {community.submesses && community.submesses.length > 0 && (
+                <div className="bg-white rounded-xl shadow-sm border p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Submeshes</h3>
+                  <div className="space-y-2">
+                    {community.submesses.map((submesh, index) => (
+                      <div key={index} className="p-3 bg-gray-50 rounded-lg">
+                        <h4 className="font-medium text-gray-900 text-sm">{submesh.name}</h4>
+                        <p className="text-xs text-gray-600 mt-1">{submesh.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Posts */}
-            <div className="space-y-4">
+            <div>
               {filteredPosts.length === 0 ? (
                 <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
                   <p className="text-gray-500">No posts in this mesh yet.</p>
@@ -382,45 +490,88 @@ export default function CommunityPage() {
                   )}
                 </div>
               ) : (
-                filteredPosts.map((post) => (
-                  <div key={post.id} className="bg-white rounded-xl shadow-sm border p-6">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center text-sm text-gray-500 space-x-2">
-                        <button
-                          onClick={() => router.push(`/profile/${post.userId}`)}
-                          className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer"
-                        >
-                          {post.postedBy}
-                        </button>
-                        <span>•</span>
-                        <span>{formatTimeAgo(new Date(post.postedAt))}</span>
-                        {post.submessName && (
-                          <>
-                            <span>•</span>
-                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
-                              {post.submessName}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredPosts.map((post) => {
+                    const shouldTruncate = post.description.length > 120;
+                    const displayText = shouldTruncate 
+                      ? post.description.substring(0, 120) + '...' 
+                      : post.description;
+                    
+                    return (
+                      <div 
+                        key={post.id} 
+                        className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 flex flex-col h-full group"
+                      >
+                        {/* Header with breadcrumb style */}
+                        <div className="p-4 pb-2">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center text-xs text-gray-500 space-x-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  router.push(`/profile/${post.userId}`);
+                                }}
+                                className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer"
+                              >
+                                {post.postedBy}
+                              </button>
+                              {post.submessName && (
+                                <>
+                                  <span>›</span>
+                                  <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md text-xs font-medium">
+                                    {post.submessName}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            <span className="text-xs text-gray-400">
+                              {formatTimeAgo(new Date(post.postedAt))}
                             </span>
-                          </>
-                        )}
+                          </div>
+                          
+                          {/* Title */}
+                          <h3 
+                            className="font-semibold text-gray-900 text-base leading-tight mb-2 cursor-pointer hover:text-blue-600 transition-colors line-clamp-2"
+                            onClick={() => router.push(`/post/${post.id}`)}
+                          >
+                            {post.title}
+                          </h3>
+                        </div>
+                        
+                        {/* Content */}
+                        <div className="px-4 pb-3 flex-1">
+                          <div className="text-gray-600 text-sm leading-relaxed">
+                            <p className="line-clamp-3">{displayText}</p>
+                            {shouldTruncate && (
+                              <button
+                                onClick={() => router.push(`/post/${post.id}`)}
+                                className="text-blue-600 hover:text-blue-700 text-xs mt-2 font-medium inline-flex items-center group-hover:underline"
+                              >
+                                Read more
+                                <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Actions */}
+                        <div className="border-t border-gray-100">
+                          <PostInteractions
+                            postId={post.id}
+                            postUserId={post.userId}
+                            onCommentClick={(e) => {
+                              e?.stopPropagation();
+                              router.push(`/post/${post.id}`);
+                            }}
+                            className="mt-0 pt-3 border-t-0"
+                          />
+                        </div>
                       </div>
-                    </div>
-                    
-                    <h3 
-                      className="font-semibold text-gray-900 text-lg mb-3 cursor-pointer hover:text-blue-600"
-                      onClick={() => router.push(`/post/${post.id}`)}
-                    >
-                      {post.title}
-                    </h3>
-                    
-                    <p className="text-gray-700 mb-4 line-clamp-3">{post.description}</p>
-                    
-                    <PostInteractions
-                      postId={post.id}
-                      postUserId={post.userId}
-                      onCommentClick={() => router.push(`/post/${post.id}`)}
-                    />
-                  </div>
-                ))
+                    );
+                  })}
+                </div>
               )}
             </div>
           </>

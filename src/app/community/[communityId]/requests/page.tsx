@@ -267,7 +267,7 @@ export default function CommunityRequestsPage() {
         <div className="flex items-center justify-between mb-6 sm:mb-8 gap-4">
           <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
             <button
-              onClick={() => router.back()}
+              onClick={() => router.push(`/community/${communityId}`)}
               className="flex-shrink-0 p-2 text-gray-600 hover:text-gray-900 transition-colors hover:bg-gray-100 rounded-lg"
             >
               <ArrowLeftIcon className="h-5 w-5" />
