@@ -846,7 +846,7 @@ export default function DashboardPage() {
                             e.stopPropagation();
                             setActiveTab(tab);
                           }}
-                          className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap flex items-center space-x-1 ${
+                          className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap flex items-center space-x-1.5 ${
                             activeTab === tab
                               ? 'bg-blue-600 text-white'
                               : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -914,14 +914,14 @@ export default function DashboardPage() {
                           <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
-                            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap flex items-center space-x-2 ${
+                            className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap flex items-center space-x-1.5 ${
                               activeTab === tab
                                 ? 'bg-blue-600 text-white'
                                 : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
                             }`}
                           >
                             <span>{tab}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-xs ${
+                            <span className={`px-1.5 py-0.5 rounded-full text-xs ${
                               activeTab === tab
                                 ? 'bg-blue-500 text-white'
                                 : 'bg-gray-100 text-gray-500'
@@ -1314,14 +1314,14 @@ export default function DashboardPage() {
                               <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
-                                className={`px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap flex items-center space-x-2 ${
+                                className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap flex items-center space-x-1.5 ${
                                   activeTab === tab
                                     ? 'bg-blue-600 text-white'
                                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                 }`}
                               >
                                 <span>{tab}</span>
-                                <span className={`px-2 py-0.5 rounded-full text-xs ${
+                                <span className={`px-1.5 py-0.5 rounded-full text-xs ${
                                   activeTab === tab
                                     ? 'bg-blue-500 text-white'
                                     : 'bg-white text-gray-500'

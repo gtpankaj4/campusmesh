@@ -418,7 +418,7 @@ export default function CommunityPage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => setActiveSubmesh('All')}
-                    className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                       activeSubmesh === 'All'
                         ? 'bg-blue-600 text-white'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -432,7 +432,7 @@ export default function CommunityPage() {
                       <button
                         key={submesh.name}
                         onClick={() => setActiveSubmesh(submesh.name)}
-                        className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                           activeSubmesh === submesh.name
                             ? 'bg-blue-600 text-white'
                             : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
