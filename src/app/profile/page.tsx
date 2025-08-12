@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { QuestionMarkCircleIcon, XMarkIcon } from "@heroicons/react/24/outline";
+// No additional icons needed
 import RepBadge from "@/components/RepBadge";
 import Navbar from "@/components/Navbar";
 
@@ -30,7 +30,6 @@ export default function ProfilePage() {
   const [userPosts, setUserPosts] = useState<UserPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'posts' | 'communities'>('overview');
-  const [showHelp, setShowHelp] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -255,15 +254,7 @@ export default function ProfilePage() {
                       <span className="font-medium">{tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
                     </button>
                   ))}
-                  
-                  {/* Help Button */}
-                  <button
-                    onClick={() => setShowHelp(true)}
-                    className="w-full text-left p-3 rounded-lg transition-colors text-gray-600 hover:bg-gray-50 flex items-center"
-                  >
-                    <QuestionMarkCircleIcon className="h-5 w-5 mr-2" />
-                    <span className="font-medium">Help</span>
-                  </button>
+
                 </div>
               </div>
             </div>
@@ -321,137 +312,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Help Modal */}
-      {showHelp && (
-        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">Welcome to Campesh!</h2>
-                <button
-                  onClick={() => setShowHelp(false)}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  <XMarkIcon className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-            
-            <div className="p-6 space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">What is Campesh?</h3>
-                <p className="text-gray-600 mb-4">
-                  Campesh is a student community platform designed to help you connect with fellow students, 
-                  share resources, and organize activities within your university community.
-                </p>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">How Meshes & Submeshes Work</h3>
-                <div className="bg-blue-50 rounded-lg p-4 mb-4">
-                  <h4 className="font-semibold text-blue-900 mb-2">Meshes</h4>
-                  <p className="text-blue-800 text-sm mb-3">
-                    Meshes are groups like "Nepalese Student Association of ULM" or "CSCI 2000 Fall 2025". 
-                    Each mesh can have multiple submeshes (categories) for different types of posts.
-                  </p>
-                  
-                  <h4 className="font-semibold text-blue-900 mb-2">Submeshes</h4>
-                  <p className="text-blue-800 text-sm">
-                    Submeshes are categories within meshes. For example, the NSA ULM mesh might have submeshes for:
-                  </p>
-                  <ul className="text-blue-800 text-sm mt-2 ml-4 list-disc">
-                    <li><strong>Rides:</strong> Carpooling and transportation</li>
-                    <li><strong>Housing:</strong> Roommate searches and housing</li>
-                    <li><strong>Books:</strong> Textbook exchanges and study materials</li>
-                    <li><strong>Help:</strong> Academic help and questions</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">How to Use Campesh</h3>
-                <div className="space-y-4">
-                  <div className="flex items-start space-x-3">
-                    <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">
-                      1
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Join Meshes</h4>
-                      <p className="text-gray-600 text-sm">
-                        Go to the Meshes page to find and join meshes relevant to your interests, classes, or organizations.
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start space-x-3">
-                    <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">
-                      2
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Create Posts</h4>
-                      <p className="text-gray-600 text-sm">
-                        When creating a post, you must select a mesh and a submesh. This helps organize content and makes it easier for others to find relevant posts.
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start space-x-3">
-                    <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">
-                      3
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Filter and Browse</h4>
-                      <p className="text-gray-600 text-sm">
-                        Use the filters on the home page to view posts from specific meshes or submeshes. You can also browse all posts or filter by category.
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start space-x-3">
-                    <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">
-                      4
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Connect with Others</h4>
-                      <p className="text-gray-600 text-sm">
-                        Use the chat feature to connect with other students, ask questions, or collaborate on projects.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Building Reputation</h3>
-                <p className="text-gray-600 text-sm mb-3">
-                  Your reputation score increases when you:
-                </p>
-                <ul className="text-gray-600 text-sm ml-4 list-disc space-y-1">
-                  <li>Create helpful posts (+10 reputation)</li>
-                  <li>Post in communities (+5 reputation)</li>
-                  <li>Receive positive feedback from other users</li>
-                </ul>
-                <p className="text-gray-600 text-sm mt-3">
-                  Higher reputation gives you access to more features and shows others that you're a trusted community member.
-                </p>
-              </div>
-
-              <div className="bg-green-50 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-green-900 mb-2">Ready to Get Started?</h3>
-                <p className="text-green-800 text-sm mb-3">
-                  Start by exploring communities, creating your first post, or connecting with other students through chat!
-                </p>
-                <button
-                  onClick={() => setShowHelp(false)}
-                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Got it!
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 } 

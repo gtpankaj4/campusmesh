@@ -18,6 +18,7 @@ import RepBadge from "@/components/RepBadge";
 import Navbar from "@/components/Navbar";
 import Toast from "@/components/Toast";
 import PostInteractions from "@/components/PostInteractions";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 interface EnrollmentQuestion {
   id: string;
@@ -107,6 +108,9 @@ export default function CommunitiesPage() {
   const [leavingCommunity, setLeavingCommunity] = useState<string | null>(null);
   const [toast, setToast] = useState({ message: '', type: 'success' as 'success' | 'error', isVisible: false });
   const router = useRouter();
+
+  // Prevent body scroll when modals are open
+  useBodyScrollLock(showCreateModal || showCommunityProfile || showImageUpload || showJoinModal);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type, isVisible: true });
@@ -2249,7 +2253,7 @@ function PostModal({ post, onClose }: PostModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200">

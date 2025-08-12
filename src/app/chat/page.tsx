@@ -25,6 +25,7 @@ import {
 } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 dayjs.extend(relativeTime);
 
@@ -87,6 +88,15 @@ export default function ChatInboxPage() {
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [toast, setToast] = useState({ message: '', type: 'success' as 'success' | 'error', isVisible: false });
   const [userActivity, setUserActivity] = useState<UserActivity | null>(null);
+  
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    type: 'danger' as 'danger' | 'warning' | 'info'
+  });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { chatUnreadCounts, totalUnread } = useUnreadMessages();
@@ -385,6 +395,16 @@ export default function ChatInboxPage() {
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type, isVisible: true });
     setTimeout(() => setToast(prev => ({ ...prev, isVisible: false })), 3000);
+  };
+
+  const showConfirmDialog = (title: string, message: string, onConfirm: () => void, type: 'danger' | 'warning' | 'info' = 'danger') => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm,
+      type
+    });
   };
 
   const deleteConversation = async () => {
@@ -991,9 +1011,11 @@ export default function ChatInboxPage() {
                                 </button>
                                 <button
                                   onClick={() => {
-                                    if (confirm('Are you absolutely sure? This cannot be undone.')) {
-                                      deleteConversation();
-                                    }
+                                    showConfirmDialog(
+                                      'Delete Conversation',
+                                      'Are you absolutely sure? This cannot be undone.',
+                                      deleteConversation
+                                    );
                                   }}
                                   className="flex-1 px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
                                 >
@@ -1026,9 +1048,12 @@ export default function ChatInboxPage() {
                                 </button>
                                 <button
                                   onClick={() => {
-                                    if (confirm(`Are you sure you want to block ${selectedChat.name || 'this user'}?`)) {
-                                      blockUser();
-                                    }
+                                    showConfirmDialog(
+                                      'Block User',
+                                      `Are you sure you want to block ${selectedChat.name || 'this user'}?`,
+                                      blockUser,
+                                      'warning'
+                                    );
                                   }}
                                   className="flex-1 px-3 py-1 text-xs bg-gray-600 text-white rounded hover:bg-gray-700"
                                 >
@@ -1081,6 +1106,14 @@ export default function ChatInboxPage() {
         </div>
       </div>
 
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+      />
 
     </div>
   );

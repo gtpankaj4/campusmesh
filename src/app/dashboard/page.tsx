@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, increment, getDoc, where, setDoc, getDocs, deleteDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { PlusIcon, CheckCircleIcon, XCircleIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, QuestionMarkCircleIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, CheckCircleIcon, XCircleIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
 import Toast from "@/components/Toast";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 import Comment from "@/components/Comment";
 import RepBadge from "@/components/RepBadge";
@@ -91,8 +92,10 @@ export default function DashboardPage() {
 
   const [suggestedCommunities, setSuggestedCommunities] = useState<any[]>([]);
   const [joiningCommunity, setJoiningCommunity] = useState<string | null>(null);
-  const [showHelp, setShowHelp] = useState(false);
   const router = useRouter();
+
+  // Prevent body scroll when modals are open
+  useBodyScrollLock(showModal || showCommunityFilter || showComments);
 
   // Fix hydration issues
   useEffect(() => {
@@ -1473,14 +1476,7 @@ export default function DashboardPage() {
 
 
       {/* Help Button - Mobile */}
-      <button
-        onClick={() => setShowHelp(true)}
-        className="fixed bottom-6 left-6 w-12 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center z-30 transition-all duration-200 hover:scale-110 lg:hidden animate-in slide-in-from-bottom-4 duration-300"
-        style={{ boxShadow: '0 4px 20px rgba(59, 130, 246, 0.4)' }}
-        title="Help & Guide"
-      >
-        <QuestionMarkCircleIcon className="h-6 w-6" />
-      </button>
+
 
       {/* Create Post Modal */}
       {showModal && (
@@ -1667,107 +1663,6 @@ export default function DashboardPage() {
 
           }}
         />
-      )}
-
-      {/* Help Modal */}
-      {showHelp && (
-        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">Welcome to Campesh!</h2>
-                <button
-                  onClick={() => setShowHelp(false)}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  <XMarkIcon className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-            
-            <div className="p-6 space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">What is Campesh?</h3>
-                <p className="text-gray-600 mb-4">
-                  Campesh is a student community platform designed to help you connect with fellow students, 
-                  share resources, and organize activities within your university community.
-                </p>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">How Meshes & Submeshes Work</h3>
-                <div className="bg-blue-50 rounded-lg p-4 mb-4">
-                  <h4 className="font-semibold text-blue-900 mb-2">Meshes</h4>
-                  <p className="text-blue-800 text-sm mb-3">
-                    Meshes are groups like "Nepalese Student Association of ULM" or "CSCI 2000 Fall 2025". 
-                    Each mesh can have multiple submeshes (categories) for different types of posts.
-                  </p>
-                  
-                  <h4 className="font-semibold text-blue-900 mb-2">Submeshes</h4>
-                  <p className="text-blue-800 text-sm">
-                    Submeshes are categories within meshes. For example, the NSA ULM mesh might have submeshes for:
-                  </p>
-                  <ul className="text-blue-800 text-sm mt-2 ml-4 list-disc">
-                    <li><strong>Rides:</strong> Carpooling and transportation</li>
-                    <li><strong>Housing:</strong> Roommate searches and housing</li>
-                    <li><strong>Books:</strong> Textbook exchanges and study materials</li>
-                    <li><strong>Help:</strong> Academic help and questions</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">How to Use Campesh</h3>
-                <div className="space-y-4">
-                  <div className="flex items-start space-x-3">
-                    <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">
-                      1
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Join Meshes</h4>
-                      <p className="text-gray-600 text-sm">
-                        Go to the Meshes page to find and join meshes relevant to your interests, classes, or organizations.
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start space-x-3">
-                    <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">
-                      2
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Create Posts</h4>
-                      <p className="text-gray-600 text-sm">
-                        When creating a post, you must select a mesh and a submesh. This helps organize content and makes it easier for others to find relevant posts.
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start space-x-3">
-                    <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold flex-shrink-0 mt-0.5">
-                      3
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Filter and Browse</h4>
-                      <p className="text-gray-600 text-sm">
-                        Use the filters on the home page to view posts from specific meshes or submeshes. You can also browse all posts or filter by category.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  onClick={() => setShowHelp(false)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
-                >
-                  Got it!
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Toast Notification */}

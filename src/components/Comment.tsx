@@ -17,6 +17,7 @@ import { db, auth } from "@/lib/firebase";
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import RepBadge from "./RepBadge";
 import { getUserDisplayName, UserData } from "@/lib/userUtils";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 interface Comment {
   id: string;
@@ -39,6 +40,9 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
   const [newComment, setNewComment] = useState("");
   const [loading, setLoading] = useState(false);
   const user = auth.currentUser;
+
+  // Prevent body scroll when comment modal is open (only when this component is rendered as a modal)
+  useBodyScrollLock(true);
 
   // Load comments
   useEffect(() => {

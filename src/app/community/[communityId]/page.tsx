@@ -9,6 +9,7 @@ import { ArrowLeftIcon, UserGroupIcon, PlusIcon, CogIcon } from "@heroicons/reac
 import Navbar from "@/components/Navbar";
 import PostInteractions from "@/components/PostInteractions";
 import RepBadge from "@/components/RepBadge";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 interface Community {
   id: string;

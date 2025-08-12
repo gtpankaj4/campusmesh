@@ -5,6 +5,7 @@ import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, u
 import { db, auth } from "@/lib/firebase";
 import { PaperAirplaneIcon, UserGroupIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
 import RepBadge from "./RepBadge";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 interface CommunityPost {
   id: string;
@@ -42,6 +43,9 @@ export default function Community({ communityId, communityName, onClose }: Commu
   const [isMember, setIsMember] = useState(false);
   const [membershipLoading, setMembershipLoading] = useState(true);
   const user = auth.currentUser;
+
+  // Prevent body scroll when community modal is open (only when this component is rendered as a modal)
+  useBodyScrollLock(true);
 
   useEffect(() => {
     if (!user) return;

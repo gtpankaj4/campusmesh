@@ -16,6 +16,8 @@ import {
 } from '@heroicons/react/24/outline';
 import Navbar from '@/components/Navbar';
 import Toast from '@/components/Toast';
+import ConfirmDialog from '@/components/ConfirmDialog';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 interface Community {
   id: string;
@@ -85,14 +87,28 @@ export default function CommunityModerationPage() {
   const [newSubmesh, setNewSubmesh] = useState({ name: '', description: '', color: '#3B82F6' });
   const [showAddSubmesh, setShowAddSubmesh] = useState(false);
   const [showTimeoutModal, setShowTimeoutModal] = useState(false);
+  const [showBanModal, setShowBanModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState<CommunityMember | null>(null);
   const [timeoutDuration, setTimeoutDuration] = useState('10');
   const [timeoutUnit, setTimeoutUnit] = useState<'minutes' | 'hours' | 'days'>('minutes');
   const [timeoutReason, setTimeoutReason] = useState('');
+  const [banReason, setBanReason] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAnswersModal, setShowAnswersModal] = useState(false);
   const [selectedJoinRequest, setSelectedJoinRequest] = useState<JoinRequest | null>(null);
   const [toast, setToast] = useState({ message: '', type: 'success' as 'success' | 'error', isVisible: false });
+  
+  // Confirmation dialog states
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    type: 'danger' as 'danger' | 'warning' | 'info'
+  });
+  
+  // Prevent body scroll when modals are open
+  useBodyScrollLock(showTimeoutModal || showBanModal || showAnswersModal || confirmDialog.isOpen);
   
   const params = useParams();
   const router = useRouter();
@@ -101,6 +117,16 @@ export default function CommunityModerationPage() {
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type, isVisible: true });
+  };
+
+  const showConfirmDialog = (title: string, message: string, onConfirm: () => void, type: 'danger' | 'warning' | 'info' = 'danger') => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm,
+      type
+    });
   };
 
   useEffect(() => {
@@ -328,19 +354,23 @@ export default function CommunityModerationPage() {
   };
 
   const deletePost = async (postId: string) => {
-    if (!confirm('Are you sure you want to delete this post?')) return;
-
-    setProcessing(postId);
+    showConfirmDialog(
+      'Delete Post',
+      'Are you sure you want to delete this post? This action cannot be undone.',
+      async () => {
+        setProcessing(postId);
     try {
       await deleteDoc(doc(db, 'posts', postId));
       await loadCommunityPosts();
       showToast('Post deleted successfully', 'success');
-    } catch (error) {
-      console.error('Error deleting post:', error);
-      showToast('Failed to delete post', 'error');
-    } finally {
-      setProcessing(null);
-    }
+        } catch (error) {
+          console.error('Error deleting post:', error);
+          showToast('Failed to delete post', 'error');
+        } finally {
+          setProcessing(null);
+        }
+      }
+    );
   };
 
   const addSubmesh = async () => {
@@ -373,7 +403,10 @@ export default function CommunityModerationPage() {
   };
 
   const removeSubmesh = async (submeshId: string) => {
-    if (!confirm('Are you sure you want to remove this submesh?')) return;
+    showConfirmDialog(
+      'Remove Submesh',
+      'Are you sure you want to remove this submesh? This action cannot be undone.',
+      async () => {
     if (!community) return;
 
     try {
@@ -389,7 +422,9 @@ export default function CommunityModerationPage() {
     } catch (error) {
       console.error('Error removing submesh:', error);
       showToast('Failed to remove submesh', 'error');
-    }
+        }
+      }
+    );
   };
 
   const timeoutMember = async () => {
@@ -446,28 +481,31 @@ export default function CommunityModerationPage() {
   };
 
   const banMember = async (member: CommunityMember) => {
-    const reason = prompt('Enter ban reason:');
-    if (!reason) return;
+    setSelectedMember(member);
+    setBanReason('');
+    setShowBanModal(true);
+  };
 
-    if (!confirm(`Are you sure you want to ban ${member.username}?`)) return;
+  const executeBan = async () => {
+    if (!selectedMember || !banReason.trim()) return;
 
     try {
       // Update user's community membership
-      if (member.id) {
-        const memberRef = doc(db, 'users', member.userId, 'communities', member.id);
+      if (selectedMember.id) {
+        const memberRef = doc(db, 'users', selectedMember.userId, 'communities', selectedMember.id);
         await updateDoc(memberRef, {
           isBanned: true,
-          banReason: reason,
+          banReason: banReason.trim(),
           banExpiresAt: null // Permanent ban
         });
       }
 
       // Send notification to user
-      const notificationsRef = collection(db, 'users', member.userId, 'notifications');
+      const notificationsRef = collection(db, 'users', selectedMember.userId, 'notifications');
       await addDoc(notificationsRef, {
         type: 'system',
         title: 'Community Ban',
-        message: `You have been banned from "${community?.name}" for: ${reason}`,
+        message: `You have been banned from "${community?.name}" for: ${banReason.trim()}`,
         createdAt: serverTimestamp(),
         read: false,
         communityId: communityId,
@@ -475,6 +513,9 @@ export default function CommunityModerationPage() {
       });
 
       await loadCommunityMembers();
+      setShowBanModal(false);
+      setSelectedMember(null);
+      setBanReason('');
       showToast('Member banned successfully', 'success');
     } catch (error) {
       console.error('Error banning member:', error);
@@ -483,7 +524,10 @@ export default function CommunityModerationPage() {
   };
 
   const unbanMember = async (member: CommunityMember) => {
-    if (!confirm(`Are you sure you want to unban ${member.username}?`)) return;
+    showConfirmDialog(
+      'Unban Member',
+      `Are you sure you want to unban ${member.username}?`,
+      async () => {
 
     try {
       if (member.id) {
@@ -500,11 +544,17 @@ export default function CommunityModerationPage() {
     } catch (error) {
       console.error('Error unbanning member:', error);
       showToast('Failed to unban member', 'error');
-    }
+        }
+      },
+      'info'
+    );
   };
 
   const removeMember = async (member: CommunityMember) => {
-    if (!confirm(`Are you sure you want to remove ${member.username} from the community?`)) return;
+    showConfirmDialog(
+      'Remove Member',
+      `Are you sure you want to remove ${member.username} from the community?`,
+      async () => {
 
     try {
       // Remove from community members
@@ -529,16 +579,19 @@ export default function CommunityModerationPage() {
     } catch (error) {
       console.error('Error removing member:', error);
       showToast('Failed to remove member', 'error');
-    }
+        }
+      }
+    );
   };
 
   const toggleMemberRole = async (member: CommunityMember) => {
     const newRole = member.role === 'admin' ? 'member' : 'admin';
     const action = newRole === 'admin' ? 'promote' : 'demote';
     
-    if (!confirm(`Are you sure you want to ${action} ${member.username} ${newRole === 'admin' ? 'to moderator' : 'to member'}?`)) {
-      return;
-    }
+    showConfirmDialog(
+      `${action === 'promote' ? 'Promote' : 'Demote'} Member`,
+      `Are you sure you want to ${action} ${member.username} ${newRole === 'admin' ? 'to moderator' : 'to member'}?`,
+      async () => {
 
     try {
       if (member.id) {
@@ -551,7 +604,10 @@ export default function CommunityModerationPage() {
     } catch (error) {
       console.error(`Error ${action}ing member:`, error);
       showToast(`Failed to ${action} member`, 'error');
-    }
+        }
+      },
+      'warning'
+    );
   };
 
   const handleJoinRequestAction = async (requestId: string, action: 'approve' | 'reject') => {
@@ -1115,18 +1171,23 @@ export default function CommunityModerationPage() {
                     </div>
                     <button
                       onClick={async () => {
-                        if (confirm(`Make ${member.username} a moderator?`)) {
-                          try {
-                            if (member.id) {
-                              const memberRef = doc(db, 'users', member.userId, 'communities', member.id);
-                              await updateDoc(memberRef, { role: 'admin' });
-                              await loadCommunityMembers();
-                              showToast(`${member.username} is now a moderator`, 'success');
+                        showConfirmDialog(
+                          'Promote to Moderator',
+                          `Make ${member.username} a moderator?`,
+                          async () => {
+                            try {
+                              if (member.id) {
+                                const memberRef = doc(db, 'users', member.userId, 'communities', member.id);
+                                await updateDoc(memberRef, { role: 'admin' });
+                                await loadCommunityMembers();
+                                showToast(`${member.username} is now a moderator`, 'success');
+                              }
+                            } catch (error) {
+                              showToast('Failed to promote member', 'error');
                             }
-                          } catch (error) {
-                            showToast('Failed to promote member', 'error');
-                          }
-                        }
+                          },
+                          'info'
+                        );
                       }}
                       className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700"
                     >
@@ -1164,18 +1225,23 @@ export default function CommunityModerationPage() {
                     {community?.creatorId !== member.userId && (
                       <button
                         onClick={async () => {
-                          if (confirm(`Remove ${member.username} as moderator?`)) {
-                            try {
-                              if (member.id) {
-                                const memberRef = doc(db, 'users', member.userId, 'communities', member.id);
-                                await updateDoc(memberRef, { role: 'member' });
-                                await loadCommunityMembers();
-                                showToast(`${member.username} is no longer a moderator`, 'success');
+                          showConfirmDialog(
+                            'Remove Moderator',
+                            `Remove ${member.username} as moderator?`,
+                            async () => {
+                              try {
+                                if (member.id) {
+                                  const memberRef = doc(db, 'users', member.userId, 'communities', member.id);
+                                  await updateDoc(memberRef, { role: 'member' });
+                                  await loadCommunityMembers();
+                                  showToast(`${member.username} is no longer a moderator`, 'success');
+                                }
+                              } catch (error) {
+                                showToast('Failed to demote moderator', 'error');
                               }
-                            } catch (error) {
-                              showToast('Failed to demote moderator', 'error');
-                            }
-                          }
+                            },
+                            'warning'
+                          );
                         }}
                         className="px-3 py-1.5 bg-red-100 text-red-700 text-sm rounded-lg hover:bg-red-200"
                       >
@@ -1192,7 +1258,7 @@ export default function CommunityModerationPage() {
 
       {/* Timeout Modal */}
       {showTimeoutModal && selectedMember && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <h3 className="text-lg font-medium text-gray-900 mb-4">
               Timeout {selectedMember.username}
@@ -1207,7 +1273,7 @@ export default function CommunityModerationPage() {
                     min="1"
                     value={timeoutDuration}
                     onChange={(e) => setTimeoutDuration(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                   />
                 </div>
                 <div className="flex-1">
@@ -1215,7 +1281,7 @@ export default function CommunityModerationPage() {
                   <select
                     value={timeoutUnit}
                     onChange={(e) => setTimeoutUnit(e.target.value as 'minutes' | 'hours' | 'days')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                   >
                     <option value="minutes">Minutes</option>
                     <option value="hours">Hours</option>
@@ -1260,9 +1326,61 @@ export default function CommunityModerationPage() {
         </div>
       )}
 
+      {/* Ban Modal */}
+      {showBanModal && selectedMember && (
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              Ban {selectedMember.username}
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ban Reason</label>
+                <textarea
+                  value={banReason}
+                  onChange={(e) => setBanReason(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-gray-900"
+                  rows={3}
+                  placeholder="Enter reason for banning this member..."
+                  required
+                />
+              </div>
+              
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-sm text-red-800">
+                  <strong>Warning:</strong> This will permanently ban {selectedMember.username} from the community. 
+                  They will not be able to access posts or participate until unbanned.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                onClick={() => {
+                  setShowBanModal(false);
+                  setSelectedMember(null);
+                  setBanReason('');
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeBan}
+                disabled={!banReason.trim()}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                Ban Member
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* See Answers Modal */}
       {showAnswersModal && selectedJoinRequest && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50">
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-4 sm:px-6 py-4 rounded-t-lg">
               <div className="flex items-center justify-between">
@@ -1363,6 +1481,15 @@ export default function CommunityModerationPage() {
         type={toast.type}
         isVisible={toast.isVisible}
         onClose={() => setToast({ ...toast, isVisible: false })}
+      />
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
       />
     </div>
   );
