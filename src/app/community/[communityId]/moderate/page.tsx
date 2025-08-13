@@ -405,7 +405,13 @@ export default function CommunityModerationPage() {
     }
   };
 
-  const removeSubmesh = async (submeshId: string) => {
+  const removeSubmesh = async (submeshId: string, submeshName: string) => {
+    // Prevent deletion of default submeshes
+    if (submeshName.toLowerCase() === 'general' || submeshName.toLowerCase() === 'all') {
+      showToast('Cannot delete the default submesh', 'error');
+      return;
+    }
+
     showConfirmDialog(
       'Remove Submesh',
       'Are you sure you want to remove this submesh? This action cannot be undone.',
@@ -660,6 +666,47 @@ export default function CommunityModerationPage() {
     } catch (error) {
       console.error(`Error ${action}ing request:`, error);
       showToast(`Failed to ${action} request`, 'error');
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const saveCommunityChanges = async () => {
+    if (!community || !user) return;
+
+    setProcessing('save-changes');
+    try {
+      // Get the updated values from the form
+      const nameInput = document.getElementById('community-name') as HTMLInputElement;
+      const descriptionInput = document.getElementById('community-description') as HTMLTextAreaElement;
+      
+      const updatedName = nameInput?.value?.trim();
+      const updatedDescription = descriptionInput?.value?.trim();
+
+      // Validate inputs
+      if (!updatedName || !updatedDescription) {
+        showToast('Please fill in all fields', 'error');
+        return;
+      }
+
+      // Update community in Firestore
+      const communityRef = doc(db, 'communities', communityId);
+      await updateDoc(communityRef, {
+        name: updatedName,
+        description: updatedDescription
+      });
+
+      // Update local state
+      setCommunity(prev => prev ? {
+        ...prev,
+        name: updatedName,
+        description: updatedDescription
+      } : null);
+
+      showToast('Community details updated successfully!', 'success');
+    } catch (error) {
+      console.error('Error updating community:', error);
+      showToast('Failed to update community details', 'error');
     } finally {
       setProcessing(null);
     }
@@ -1031,12 +1078,20 @@ export default function CommunityModerationPage() {
                         <p className="text-sm text-gray-500">{submesh.description}</p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => removeSubmesh(submesh.id)}
-                      className="p-1 text-red-600 hover:bg-red-50 rounded"
-                    >
-                      <XMarkIcon className="h-4 w-4" />
-                    </button>
+                    {/* Only show delete button for non-default submeshes */}
+                    {submesh.name.toLowerCase() !== 'general' && submesh.name.toLowerCase() !== 'all' ? (
+                      <button
+                        onClick={() => removeSubmesh(submesh.id, submesh.name)}
+                        className="p-1 text-red-600 hover:bg-red-50 rounded"
+                        title="Delete submesh"
+                      >
+                        <XMarkIcon className="h-4 w-4" />
+                      </button>
+                    ) : (
+                      <div className="p-1 text-gray-400" title="Default submesh cannot be deleted">
+                        <span className="text-xs font-medium">Default</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1141,6 +1196,7 @@ export default function CommunityModerationPage() {
                   <input
                     type="text"
                     defaultValue={community?.name}
+                    id="community-name"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                   />
                 </div>
@@ -1148,13 +1204,18 @@ export default function CommunityModerationPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                   <textarea
                     defaultValue={community?.description}
+                    id="community-description"
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                   />
                 </div>
                 <div className="flex justify-end">
-                  <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                    Save Changes
+                  <button 
+                    onClick={saveCommunityChanges}
+                    disabled={processing === 'save-changes'}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {processing === 'save-changes' ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
               </div>
