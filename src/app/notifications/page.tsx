@@ -112,7 +112,7 @@ export default function NotificationsPage() {
     if (notification.actionUrl) {
       router.push(notification.actionUrl);
     } else if (notification.type === 'join_request' && notification.communityId) {
-      router.push(`/community/${notification.communityId}/requests`);
+      router.push(`/community/${notification.communityId}/moderate?tab=requests`);
     } else if (notification.type === 'message') {
       router.push('/chat');
     }

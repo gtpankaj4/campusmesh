@@ -4,11 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { collection, doc, getDoc, getDocs, addDoc, query, where, orderBy, onSnapshot, updateDoc, increment, setDoc, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { auth, db, realtimeDb } from "@/lib/firebase";
+import { ref, set } from "firebase/database";
 import { ArrowLeftIcon, UserGroupIcon, PlusIcon, CogIcon } from "@heroicons/react/24/outline";
 import Navbar from "@/components/Navbar";
 import PostInteractions from "@/components/PostInteractions";
 import RepBadge from "@/components/RepBadge";
+import Toast from "@/components/Toast";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 // Add body scroll lock for modals
@@ -71,6 +73,11 @@ export default function CommunityPage() {
     submessId: ''
   });
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
+  const [toast, setToast] = useState({
+    message: '',
+    type: 'success' as 'success' | 'error',
+    isVisible: false
+  });
   const router = useRouter();
   const params = useParams();
   const communityId = params.communityId as string;
@@ -240,6 +247,96 @@ export default function CommunityPage() {
     }
   };
 
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type, isVisible: true });
+  };
+
+  // Function to notify moderators about new join requests
+  const notifyModeratorsOfJoinRequest = async (requesterId: string, requesterName: string) => {
+    if (!community) return;
+    
+    try {
+      // Find all community moderators
+      const moderatorIds: string[] = [];
+      
+      // Add community creator (always a moderator)
+      const communityRef = doc(db, 'communities', communityId);
+      const communitySnap = await getDoc(communityRef);
+      if (communitySnap.exists()) {
+        const communityData = communitySnap.data();
+        if (communityData.creatorId) {
+          moderatorIds.push(communityData.creatorId);
+        }
+      }
+      
+      // Add moderators from moderators list
+      if (community.moderators) {
+        Object.keys(community.moderators).forEach(userId => {
+          if (community.moderators![userId] && !moderatorIds.includes(userId)) {
+            moderatorIds.push(userId);
+          }
+        });
+      }
+      
+      // Also check for users with admin role in the community
+      try {
+        const allUsersRef = collection(db, 'users');
+        const allUsersSnap = await getDocs(allUsersRef);
+        
+        for (const userDoc of allUsersSnap.docs) {
+          const userCommunitiesRef = collection(db, 'users', userDoc.id, 'communities');
+          const userCommunitiesSnap = await getDocs(userCommunitiesRef);
+          
+          const userCommunity = userCommunitiesSnap.docs.find(doc => doc.data().communityId === communityId);
+          if (userCommunity && userCommunity.data().role === 'admin' && !moderatorIds.includes(userDoc.id)) {
+            moderatorIds.push(userDoc.id);
+          }
+        }
+      } catch (error) {
+        console.error('Error finding admin users:', error);
+      }
+      
+      if (moderatorIds.length === 0) {
+        console.warn('No moderators found for community:', communityId);
+        return;
+      }
+      
+      // Send notification to each moderator using the notification system
+      const { createNotification } = await import('@/components/NotificationSystem');
+      
+      const notificationPromises = moderatorIds.map(async (moderatorId) => {
+        try {
+          await createNotification(moderatorId, {
+            type: 'join_request',
+            title: 'New Join Request',
+            message: `${requesterName} wants to join "${community.name}"`,
+            read: false,
+            fromUserId: requesterId,
+            fromUserName: requesterName,
+            communityId: communityId,
+            communityName: community.name,
+            data: {
+              communityId: communityId,
+              communityName: community.name
+            }
+          });
+          console.log('✅ Notification sent to moderator:', moderatorId);
+          return true;
+        } catch (error) {
+          console.error('❌ Failed to send notification to moderator:', moderatorId, error);
+          return false;
+        }
+      });
+
+      const results = await Promise.all(notificationPromises);
+      const successCount = results.filter(Boolean).length;
+      console.log(`✅ Join request notifications sent: ${successCount}/${moderatorIds.length} successful`);
+      
+    } catch (error) {
+      console.error('❌ Error sending notifications to moderators:', error);
+    }
+  };
+
   const createPost = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !community || isSubmittingPost) return;
@@ -292,14 +389,113 @@ export default function CommunityPage() {
 
       setShowCreatePostModal(false);
       setPostFormData({ title: '', description: '', submessId: '' });
-      alert('Post created successfully! +10 reputation gained!');
+      showToast('Post created successfully! +10 reputation gained!', 'success');
     } catch (error) {
       console.error('Error creating post:', error);
-      alert('Error creating post. Please try again.');
+      showToast('Error creating post. Please try again.', 'error');
     } finally {
       setIsSubmittingPost(false);
     }
   };
+
+  // Full-page create post view (replaces modal)
+  if (showCreatePostModal) {
+    return (
+      <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+        <Navbar userProfile={userProfile} />
+        <div className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="max-w-2xl mx-auto px-4 py-6 pt-8 pb-6">
+            <div className="mb-8">
+              <button
+                onClick={() => {
+                  setShowCreatePostModal(false);
+                  setPostFormData({ title: '', description: '', submessId: '' });
+                }}
+                className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
+              >
+                <ArrowLeftIcon className="h-5 w-5 mr-2" />
+                Back
+              </button>
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                <PlusIcon className="h-6 w-6 text-blue-600" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Create Post in {community?.name}</h1>
+                <p className="text-gray-600">Share something with this mesh</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border p-6">
+            <form onSubmit={createPost} className="space-y-6">
+              {community?.submesses && community.submesses.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Submesh (optional)</label>
+                  <select
+                    value={postFormData.submessId}
+                    onChange={(e) => setPostFormData(prev => ({ ...prev, submessId: e.target.value }))}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                  >
+                    <option value="">General</option>
+                    {community.submesses.map((submesh) => (
+                      <option key={submesh.name} value={submesh.name}>{submesh.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
+                <input
+                  type="text"
+                  value={postFormData.title}
+                  onChange={(e) => setPostFormData(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                  placeholder="What's your post about?"
+                  required
+                  maxLength={120}
+                />
+                <p className="text-xs text-gray-500 mt-1">{postFormData.title.length}/120 characters</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description *</label>
+                <textarea
+                  value={postFormData.description}
+                  onChange={(e) => setPostFormData(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                  rows={5}
+                  placeholder="Share your thoughts..."
+                  required
+                  maxLength={1000}
+                />
+                <p className="text-xs text-gray-500 mt-1">{postFormData.description.length}/1000 characters</p>
+              </div>
+              <div className="flex space-x-4 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreatePostModal(false);
+                    setPostFormData({ title: '', description: '', submessId: '' });
+                  }}
+                  className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingPost}
+                  className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+                >
+                  {isSubmittingPost ? 'Creating...' : 'Create Post'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+        </div>
+      </div>
+    );
+  }
 
   const joinCommunity = async () => {
     if (!user || !community || joining) return;
@@ -309,16 +505,47 @@ export default function CommunityPage() {
       if (community.isPrivate && community.enrollmentQuestions && community.enrollmentQuestions.length > 0) {
         // For private communities with enrollment questions, create a join request
         const joinRequestsRef = collection(db, 'communities', communityId, 'joinRequests');
+        
+        // Convert enrollmentAnswers to the expected format
+        const formattedAnswers = community.enrollmentQuestions.map(question => ({
+          question: question.question,
+          answer: enrollmentAnswers[question.id] || ''
+        }));
+        
+        console.log('📝 Creating join request with', formattedAnswers.length, 'answers');
+        
         await addDoc(joinRequestsRef, {
           userId: user.uid,
           userEmail: user.email,
           username: userProfile?.username || user.email?.split('@')[0] || 'User',
-          answers: enrollmentAnswers,
+          answers: formattedAnswers,
           requestedAt: serverTimestamp(),
-          status: 'pending'
+          createdAt: serverTimestamp(), // Add this for compatibility
+          status: 'pending',
+          communityId: communityId,
+          communityName: community.name
         });
+
+        // Notify community moderators about the new join request
+        await notifyModeratorsOfJoinRequest(user.uid, userProfile?.username || user.email?.split('@')[0] || 'User');
         
-        alert('Your join request has been submitted! Community admins will review it soon.');
+        // Also create a test notification to verify the system is working
+        try {
+          const { createNotification } = await import('@/components/NotificationSystem');
+          await createNotification(user.uid, {
+            type: 'system',
+            title: 'Join Request Submitted',
+            message: `Your request to join "${community.name}" has been submitted successfully!`,
+            read: false,
+            communityId: communityId,
+            communityName: community.name
+          });
+          console.log('✅ Test notification created for user');
+        } catch (error) {
+          console.error('❌ Failed to create test notification:', error);
+        }
+        
+        showToast('Your join request has been submitted! Community admins will review it soon.', 'success');
         setShowEnrollmentForm(false);
         setEnrollmentAnswers({});
       } else {
@@ -345,7 +572,7 @@ export default function CommunityPage() {
       }
     } catch (error) {
       console.error('Error joining community:', error);
-      alert('Error joining community. Please try again.');
+      showToast('Error joining community. Please try again.', 'error');
     } finally {
       setJoining(false);
     }
@@ -663,100 +890,6 @@ export default function CommunityPage() {
         )}
       </div>
 
-      {/* Create Post Modal */}
-      {showCreatePostModal && (
-        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Create Post in {community?.name}</h3>
-                <button
-                  onClick={() => {
-                    setShowCreatePostModal(false);
-                    setPostFormData({ title: '', description: '', submessId: '' });
-                  }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              
-              <form onSubmit={createPost} className="space-y-4">
-                {/* Submesh Selection */}
-                {community?.submesses && community.submesses.length > 0 && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Submesh (Optional)
-                    </label>
-                    <select
-                      value={postFormData.submessId}
-                      onChange={(e) => setPostFormData(prev => ({ ...prev, submessId: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                    >
-                      <option value="">General</option>
-                      {community.submesses.map((submesh) => (
-                        <option key={submesh.name} value={submesh.name}>
-                          {submesh.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Title */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Title <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={postFormData.title}
-                    onChange={(e) => setPostFormData(prev => ({ ...prev, title: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                    placeholder="What's your post about?"
-                    required
-                  />
-                </div>
-
-                {/* Description */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Description <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    value={postFormData.description}
-                    onChange={(e) => setPostFormData(prev => ({ ...prev, description: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                    rows={4}
-                    placeholder="Share your thoughts..."
-                    required
-                  />
-                </div>
-                
-                <div className="flex space-x-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowCreatePostModal(false);
-                      setPostFormData({ title: '', description: '', submessId: '' });
-                    }}
-                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmittingPost}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {isSubmittingPost ? 'Creating...' : 'Create Post'}
-                  </button>
-                </div>
-              </form>
-          </div>
-        </div>
-      )}
 
       {/* Enrollment Form Modal */}
       {showEnrollmentForm && community?.enrollmentQuestions && (
@@ -782,7 +915,11 @@ export default function CommunityPage() {
                 Please answer the following questions to join this private mesh:
               </p>
               
-              <form onSubmit={(e) => { e.preventDefault(); joinCommunity(); }} className="space-y-4">
+              <form onSubmit={(e) => { 
+                e.preventDefault(); 
+                console.log('📝 Form submitted with', Object.keys(enrollmentAnswers).length, 'answers');
+                joinCommunity(); 
+              }} className="space-y-4">
                 {community.enrollmentQuestions.map((question) => (
                   <div key={question.id}>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -793,10 +930,13 @@ export default function CommunityPage() {
                     {question.type === 'text' ? (
                       <textarea
                         value={enrollmentAnswers[question.id] || ''}
-                        onChange={(e) => setEnrollmentAnswers(prev => ({
-                          ...prev,
-                          [question.id]: e.target.value
-                        }))}
+                        onChange={(e) => {
+                          console.log('📝 Answer changed for question', question.id, ':', e.target.value);
+                          setEnrollmentAnswers(prev => ({
+                            ...prev,
+                            [question.id]: e.target.value
+                          }));
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                         rows={3}
                         required={question.required}
@@ -805,10 +945,13 @@ export default function CommunityPage() {
                     ) : question.type === 'select' && question.options ? (
                       <select
                         value={enrollmentAnswers[question.id] || ''}
-                        onChange={(e) => setEnrollmentAnswers(prev => ({
-                          ...prev,
-                          [question.id]: e.target.value
-                        }))}
+                        onChange={(e) => {
+                          console.log('📝 Answer changed for question', question.id, ':', e.target.value);
+                          setEnrollmentAnswers(prev => ({
+                            ...prev,
+                            [question.id]: e.target.value
+                          }));
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                         required={question.required}
                       >
@@ -845,6 +988,14 @@ export default function CommunityPage() {
           </div>
         </div>
       )}
+
+      {/* Toast Notification */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={() => setToast({ ...toast, isVisible: false })}
+      />
     </div>
   );
 }

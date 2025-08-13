@@ -10,6 +10,15 @@
           }
         }
       }
+    },
+    "notifications": {
+      "$userId": {
+        ".read": "auth != null && auth.uid == $userId",
+        ".write": "auth != null",
+        "$notificationId": {
+          ".validate": "newData.hasChildren(['type', 'title', 'message', 'timestamp', 'read'])"
+        }
+      }
     }
   }
 }

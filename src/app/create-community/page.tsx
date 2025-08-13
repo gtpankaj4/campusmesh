@@ -28,20 +28,38 @@ export default function CreateCommunityPage() {
         isPrivate: formData.isPrivate,
         memberCount: 1,
         members: {
-          [auth.currentUser.uid]: true
+          [auth.currentUser.uid]: {
+            joinedAt: serverTimestamp(),
+            role: 'admin'
+          }
         },
         moderators: {
           [auth.currentUser.uid]: true
         },
         createdAt: serverTimestamp(),
-        createdBy: auth.currentUser.uid,
+        creatorId: auth.currentUser.uid,
         submesses: [
           {
             id: 'general',
             name: 'General',
             description: 'General discussion'
           }
-        ]
+        ],
+        // Add default enrollment questions for private communities
+        enrollmentQuestions: formData.isPrivate ? [
+          {
+            id: 'default-1',
+            question: 'Why do you want to join this community?',
+            type: 'text',
+            required: true
+          },
+          {
+            id: 'default-2', 
+            question: 'How did you hear about this community?',
+            type: 'text',
+            required: false
+          }
+        ] : []
       });
 
       // Add community to user's communities

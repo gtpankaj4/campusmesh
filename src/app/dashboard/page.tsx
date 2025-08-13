@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, increment, getDoc, where, setDoc, getDocs, deleteDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { PlusIcon, CheckCircleIcon, XCircleIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, ChevronDownIcon, UserGroupIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, CheckCircleIcon, XCircleIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, ChevronDownIcon, UserGroupIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
 import Toast from "@/components/Toast";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
@@ -97,7 +97,7 @@ export default function DashboardPage() {
   const router = useRouter();
 
   // Prevent body scroll when modals are open
-  useBodyScrollLock(showModal || showCommunityFilter || showComments);
+  useBodyScrollLock(showCommunityFilter || showComments);
 
   // Fix hydration issues
   useEffect(() => {
@@ -728,6 +728,189 @@ export default function DashboardPage() {
   }, [showMeshDropdown]);
 
 
+
+  // Early return for create post page
+  if (showModal) {
+    return (
+      <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+        <Navbar userProfile={userProfile} />
+        <div className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="max-w-2xl mx-auto px-4 py-6 pt-8 pb-6">
+            {/* Header */}
+            <div className="mb-8">
+              <button
+                onClick={() => {
+                  setShowModal(false);
+                  setFormData({ title: '', description: '', type: '', communityId: '', submessId: '' });
+                  setMeshSearchQuery('');
+                  setShowMeshDropdown(false);
+                }}
+                className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
+              >
+                <ArrowLeftIcon className="h-5 w-5 mr-2" />
+                Back
+              </button>
+              
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                  <PlusIcon className="h-6 w-6 text-blue-600" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">Create New Post</h1>
+                  <p className="text-gray-600">Share something with your meshes</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Form */}
+            <div className="bg-white rounded-xl shadow-sm border p-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {userCommunities.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Mesh *
+                  </label>
+                  <div className="relative mesh-dropdown-container">
+                    <input
+                      type="text"
+                      value={meshSearchQuery}
+                      onChange={(e) => {
+                        setMeshSearchQuery(e.target.value);
+                        setShowMeshDropdown(true);
+                      }}
+                      onFocus={() => setShowMeshDropdown(true)}
+                      placeholder="Select a mesh"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                      required={!formData.communityId}
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                      <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+                    </div>
+                    
+                    {showMeshDropdown && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {userCommunities
+                          .filter(community => 
+                            community.communityName.toLowerCase().includes(meshSearchQuery.toLowerCase())
+                          )
+                          .map((community) => (
+                            <div
+                              key={community.communityId}
+                              onClick={() => {
+                                setFormData({ 
+                                  ...formData, 
+                                  communityId: community.communityId,
+                                  submessId: ''
+                                });
+                                setMeshSearchQuery(community.communityName);
+                                setShowMeshDropdown(false);
+                              }}
+                              className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                            >
+                              <div className="flex items-center space-x-3">
+                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                  <span className="text-blue-600 font-bold text-sm">
+                                    {community.communityName.charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="font-medium text-gray-900">{community.communityName}</div>
+                              </div>
+                            </div>
+                          ))}
+                        {userCommunities.filter(community => 
+                          community.communityName.toLowerCase().includes(meshSearchQuery.toLowerCase())
+                        ).length === 0 && (
+                          <div className="px-4 py-3 text-gray-500 text-center">
+                            No meshes found
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {formData.communityId && communitySubmesses[formData.communityId] && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Submesh *
+                  </label>
+                  <select 
+                    value={formData.submessId}
+                    onChange={(e) => setFormData({ ...formData, submessId: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                    required
+                  >
+                    <option value="">Select Submesh</option>
+                    {communitySubmesses[formData.communityId].map((submess) => (
+                      <option key={submess.id} value={submess.name}>
+                        {submess.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Title *
+                </label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                  placeholder="What's your post about?"
+                  required
+                  maxLength={120}
+                />
+                <p className="text-xs text-gray-500 mt-1">{formData.title.length}/120 characters</p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Description *
+                </label>
+                <textarea
+                  rows={4}
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                  placeholder="Share your thoughts..."
+                  required
+                  maxLength={500}
+                />
+                <p className="text-xs text-gray-500 mt-1">{formData.description.length}/500 characters</p>
+              </div>
+
+              <div className="flex space-x-4 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowModal(false);
+                    setFormData({ title: '', description: '', type: '', communityId: '', submessId: '' });
+                    setMeshSearchQuery('');
+                    setShowMeshDropdown(false);
+                  }}
+                  className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !formData.title.trim() || !formData.description.trim()}
+                  className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                >
+                  {isSubmitting ? 'Creating...' : 'Create Post'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1533,149 +1716,7 @@ export default function DashboardPage() {
       {/* Help Button - Mobile */}
 
 
-      {/* Create Post Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Create post</h2>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowModal(false);
-                  setFormData({ title: '', description: '', type: '', communityId: '', submessId: '' });
-                  setMeshSearchQuery('');
-                  setShowMeshDropdown(false);
-                }}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
-              {userCommunities.length > 0 && (
-                <div>
-                  <div className="relative mesh-dropdown-container">
-                    <input
-                      type="text"
-                      value={meshSearchQuery}
-                      onChange={(e) => {
-                        setMeshSearchQuery(e.target.value);
-                        setShowMeshDropdown(true);
-                      }}
-                      onFocus={() => setShowMeshDropdown(true)}
-                      placeholder="Select a mesh"
-                      className="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 text-base bg-white"
-                      required={!formData.communityId}
-                    />
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    </div>
-                    
-                    {/* Dropdown */}
-                    {showMeshDropdown && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                        {userCommunities
-                          .filter(community => 
-                            community.communityName.toLowerCase().includes(meshSearchQuery.toLowerCase())
-                          )
-                          .map((community) => (
-                            <div
-                              key={community.communityId}
-                              onClick={() => {
-                                setFormData({ 
-                                  ...formData, 
-                                  communityId: community.communityId,
-                                  submessId: '' // Reset submesh when community changes
-                                });
-                                setMeshSearchQuery(community.communityName);
-                                setShowMeshDropdown(false);
-                              }}
-                              className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                            >
-                              <div className="flex items-center space-x-3">
-                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                                  <span className="text-blue-600 font-bold text-sm">
-                                    {community.communityName.charAt(0).toUpperCase()}
-                                  </span>
-                                </div>
-                                <div>
-                                  <div className="font-medium text-gray-900">{community.communityName}</div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        {userCommunities.filter(community => 
-                          community.communityName.toLowerCase().includes(meshSearchQuery.toLowerCase())
-                        ).length === 0 && (
-                          <div className="px-4 py-3 text-gray-500 text-center">
-                            No meshes found
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
 
-              {formData.communityId && communitySubmesses[formData.communityId] && (
-                <div>
-                  <select 
-                    value={formData.submessId}
-                    onChange={(e) => setFormData({ ...formData, submessId: e.target.value })}
-                    className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 text-base"
-                    required
-                  >
-                    <option value="">Select Submesh</option>
-                    {communitySubmesses[formData.communityId].map((submess) => (
-                      <option key={submess.id} value={submess.name}>
-                        {submess.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              
-              <div>
-                <input
-                  type="text"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 text-base"
-                  placeholder="✏️ What's your post about?"
-                  required
-                />
-              </div>
-              
-              <div>
-                <textarea
-                  rows={3}
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 text-base resize-none"
-                  placeholder="💭 Share your thoughts..."
-                  required
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !formData.title.trim() || !formData.description.trim()}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-base"
-                >
-                  {isSubmitting ? 'Creating...' : 'Create Post'}
-                </button>
-              </div>
-
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Community Filter Modal */}
       {showCommunityFilter && (

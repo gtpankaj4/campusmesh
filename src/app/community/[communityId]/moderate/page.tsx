@@ -328,10 +328,11 @@ export default function CommunityModerationPage() {
 
   const loadJoinRequests = async () => {
     try {
-      const joinRequestsRef = collection(db, 'joinRequests');
+      // Query from the correct subcollection path: communities/{id}/joinRequests
+      const joinRequestsRef = collection(db, 'communities', communityId, 'joinRequests');
       const q = query(
         joinRequestsRef, 
-        where('communityId', '==', communityId)
+        orderBy('requestedAt', 'desc')
       );
       const joinRequestsSnap = await getDocs(q);
       
@@ -347,6 +348,7 @@ export default function CommunityModerationPage() {
         return (b.createdAt?.toDate?.() || new Date()).getTime() - (a.createdAt?.toDate?.() || new Date()).getTime();
       });
 
+      console.log('📋 Loaded', requests.length, 'join requests for community:', communityId);
       setJoinRequests(requests);
     } catch (error) {
       console.error('Error loading join requests:', error);
@@ -618,8 +620,8 @@ export default function CommunityModerationPage() {
       const request = joinRequests.find(r => r.id === requestId);
       if (!request) return;
 
-      // Update join request status
-      const requestRef = doc(db, 'joinRequests', requestId);
+      // Update join request status in the correct subcollection
+      const requestRef = doc(db, 'communities', communityId, 'joinRequests', requestId);
       await updateDoc(requestRef, {
         status: action === 'approve' ? 'approved' : 'rejected',
         reviewedAt: serverTimestamp(),
@@ -1065,10 +1067,12 @@ export default function CommunityModerationPage() {
                         <h3 className="font-semibold text-gray-900 text-sm sm:text-base">{request.userName}</h3>
                         <p className="text-sm text-gray-500 truncate">{request.userEmail}</p>
                         <p className="text-xs text-gray-400 mt-1">
-                          {request.createdAt?.toDate ? 
-                            `Applied ${new Date(request.createdAt.toDate()).toLocaleDateString()} at ${new Date(request.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` :
-                            'Just now'
-                          }
+                          {(() => {
+                            const date = request.createdAt?.toDate?.() || request.requestedAt?.toDate?.();
+                            return date ? 
+                              `Applied ${new Date(date).toLocaleDateString()} at ${new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` :
+                              'Just now';
+                          })()}
                         </p>
                         <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full mt-2 ${
                           request.status === 'pending' 
@@ -1378,98 +1382,135 @@ export default function CommunityModerationPage() {
         </div>
       )}
 
-      {/* See Answers Modal */}
+      {/* See Answers Modal - Mobile Optimized */}
       {showAnswersModal && selectedJoinRequest && (
-        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-4 sm:px-6 py-4 rounded-t-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">
-                    Join Request from {selectedJoinRequest.userName}
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {selectedJoinRequest.userEmail}
-                  </p>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
+          {/* Full screen on mobile, centered on desktop */}
+          <div className="h-full overflow-y-auto">
+            <div className="min-h-full flex items-start justify-center p-0 sm:p-4 sm:items-center">
+              <div 
+                className="bg-white w-full max-w-2xl min-h-screen sm:min-h-0 sm:max-h-[90vh] sm:rounded-2xl shadow-2xl flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between p-4 border-b bg-white sm:rounded-t-2xl">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Join Request from {selectedJoinRequest.userName}
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {selectedJoinRequest.userEmail}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowAnswersModal(false);
+                      setSelectedJoinRequest(null);
+                    }}
+                    className="ml-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                  >
+                    <XMarkIcon className="h-5 w-5" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => {
-                    setShowAnswersModal(false);
-                    setSelectedJoinRequest(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <XMarkIcon className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-            
-            <div className="p-4 sm:p-6">
-              <div className="mb-4">
-                <p className="text-sm text-gray-600">
-                  Applied on {selectedJoinRequest.createdAt?.toDate ? 
-                    new Date(selectedJoinRequest.createdAt.toDate()).toLocaleDateString('en-US', { 
-                      weekday: 'long', 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    }) : 'Unknown date'
-                  }
-                </p>
-              </div>
 
-              {selectedJoinRequest.answers && selectedJoinRequest.answers.length > 0 ? (
-                <div className="space-y-6">
-                  <h4 className="font-medium text-gray-900 text-base">Application Answers:</h4>
-                  {selectedJoinRequest.answers.map((answer, index) => (
-                    <div key={index} className="bg-gray-50 rounded-lg p-4">
-                      <h5 className="font-medium text-gray-800 text-sm mb-2">{answer.question}</h5>
-                      <p className="text-gray-700 text-sm whitespace-pre-wrap">{answer.answer}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-gray-500">No answers provided</p>
-                </div>
-              )}
+                {/* Content - Scrollable */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                  {/* Date */}
+                  <div className="bg-blue-50 p-3 rounded-lg">
+                    <p className="text-sm text-gray-700">
+                      <span className="font-medium">Applied:</span>{' '}
+                      {(() => {
+                        const date = selectedJoinRequest.createdAt?.toDate?.() || selectedJoinRequest.requestedAt?.toDate?.();
+                        return date ? 
+                          new Date(date).toLocaleDateString('en-US', { 
+                            weekday: 'long', 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }) : 'Unknown date';
+                      })()}
+                    </p>
+                  </div>
 
-              <div className="flex flex-col sm:flex-row items-center justify-end space-y-2 sm:space-y-0 sm:space-x-3 pt-6 border-t mt-6">
-                <button
-                  onClick={() => {
-                    setShowAnswersModal(false);
-                    setSelectedJoinRequest(null);
-                  }}
-                  className="w-full sm:w-auto px-4 py-2 text-gray-700 hover:text-gray-900 transition-colors"
-                >
-                  Close
-                </button>
-                {selectedJoinRequest.status === 'pending' && (
-                  <>
+                  {/* Answers */}
+                  {(() => {
+                    let answersToDisplay: { question: string; answer: string }[] = [];
+                    
+                    if (selectedJoinRequest.answers) {
+                      if (Array.isArray(selectedJoinRequest.answers)) {
+                        answersToDisplay = selectedJoinRequest.answers;
+                      } else if (typeof selectedJoinRequest.answers === 'object') {
+                        answersToDisplay = Object.entries(selectedJoinRequest.answers).map(([key, value]) => ({
+                          question: key,
+                          answer: String(value)
+                        }));
+                      }
+                    }
+                    
+                    return answersToDisplay.length > 0 ? (
+                      <div className="space-y-4">
+                        <h4 className="font-semibold text-gray-900 text-lg">Application Answers</h4>
+                        {answersToDisplay.map((answer, index) => (
+                          <div key={index} className="bg-gray-50 rounded-lg p-4 border">
+                            <h5 className="font-medium text-blue-700 text-sm mb-2">
+                              {answer.question}
+                            </h5>
+                            <div className="bg-white rounded p-3 border">
+                              <p className="text-gray-700 text-sm whitespace-pre-wrap">
+                                {answer.answer || 'No answer provided'}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-gray-500">No answers provided</p>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Footer - Action Buttons */}
+                <div className="border-t bg-white p-4 sm:rounded-b-2xl">
+                  <div className="flex flex-col space-y-3 sm:flex-row sm:space-y-0 sm:space-x-3">
                     <button
                       onClick={() => {
-                        handleJoinRequestAction(selectedJoinRequest.id, 'reject');
                         setShowAnswersModal(false);
                         setSelectedJoinRequest(null);
                       }}
-                      className="w-full sm:w-auto px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                      className="flex-1 sm:flex-none px-6 py-3 text-gray-700 hover:bg-gray-100 rounded-lg border font-medium"
                     >
-                      Reject
+                      Close
                     </button>
-                    <button
-                      onClick={() => {
-                        handleJoinRequestAction(selectedJoinRequest.id, 'approve');
-                        setShowAnswersModal(false);
-                        setSelectedJoinRequest(null);
-                      }}
-                      className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                    >
-                      Accept
-                    </button>
-                  </>
-                )}
+                    {selectedJoinRequest.status === 'pending' && (
+                      <>
+                        <button
+                          onClick={() => {
+                            handleJoinRequestAction(selectedJoinRequest.id, 'reject');
+                            setShowAnswersModal(false);
+                            setSelectedJoinRequest(null);
+                          }}
+                          className="flex-1 sm:flex-none px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleJoinRequestAction(selectedJoinRequest.id, 'approve');
+                            setShowAnswersModal(false);
+                            setSelectedJoinRequest(null);
+                          }}
+                          className="flex-1 sm:flex-none px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                        >
+                          Accept
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

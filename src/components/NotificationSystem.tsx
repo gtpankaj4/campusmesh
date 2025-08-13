@@ -52,23 +52,35 @@ export default function NotificationSystem() {
     if (!user) return;
 
     const notificationsRef = ref(realtimeDb, `notifications/${user.uid}`);
-    const unsubscribe = onValue(notificationsRef, (snapshot) => {
-      const notificationsData = snapshot.val();
-      if (notificationsData) {
-        const notificationArray: Notification[] = Object.keys(notificationsData)
-          .map((key) => ({
-            id: key,
-            ...notificationsData[key],
-          }))
-          .sort((a, b) => b.timestamp - a.timestamp);
+    const unsubscribe = onValue(
+      notificationsRef, 
+      (snapshot) => {
+        try {
+          const notificationsData = snapshot.val();
+          if (notificationsData) {
+            const notificationArray: Notification[] = Object.keys(notificationsData)
+              .map((key) => ({
+                id: key,
+                ...notificationsData[key],
+              }))
+              .sort((a, b) => b.timestamp - a.timestamp);
 
-        setNotifications(notificationArray);
-        setUnreadCount(notificationArray.filter((n) => !n.read).length);
-      } else {
-        setNotifications([]);
-        setUnreadCount(0);
+            console.log('🔔 Notifications updated:', notificationArray.length, 'total,', notificationArray.filter(n => !n.read).length, 'unread');
+            
+            setNotifications(notificationArray);
+            setUnreadCount(notificationArray.filter((n) => !n.read).length);
+          } else {
+            setNotifications([]);
+            setUnreadCount(0);
+          }
+        } catch (error) {
+          console.error('❌ Error processing notifications:', error);
+        }
+      },
+      (error) => {
+        console.error('❌ Error listening to notifications:', error);
       }
-    });
+    );
 
     return () => off(notificationsRef, "value", unsubscribe);
   }, [user]);
@@ -83,7 +95,7 @@ export default function NotificationSystem() {
       );
       await set(notificationRef, true);
     } catch (error) {
-      console.error("Error marking notification as read:", error);
+      console.error("❌ Error marking notification as read:", error);
     }
   };
 
@@ -116,6 +128,8 @@ export default function NotificationSystem() {
       if (communityId) {
         router.push(`/community/${communityId}/moderate?tab=requests`);
       }
+    } else if (notification.actionUrl) {
+      router.push(notification.actionUrl);
     }
 
     setShowNotifications(false);
@@ -136,17 +150,19 @@ export default function NotificationSystem() {
 
   if (!user) return null;
 
+
+
   return (
     <div className="relative">
       {/* Notification Bell */}
       <button
         onClick={() => router.push("/notifications")}
         className="relative p-2 text-gray-600 hover:text-gray-800 transition-colors rounded-lg hover:bg-gray-100"
-        title="View all notifications"
+        title={`View all notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
       >
         <BellIcon className="w-6 h-6" />
         {unreadCount > 0 && (
-          <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center animate-pulse ring-2 ring-red-200">
+          <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center animate-pulse ring-2 ring-red-200 z-50">
             <span className="text-white text-xs font-bold">
               {unreadCount > 9 ? "9+" : unreadCount}
             </span>
@@ -204,6 +220,8 @@ export default function NotificationSystem() {
                               ? "bg-blue-500"
                               : notification.type === "comment"
                               ? "bg-yellow-500"
+                              : notification.type === "join_request"
+                              ? "bg-orange-500"
                               : "bg-purple-500"
                           }`}
                         />

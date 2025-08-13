@@ -171,15 +171,31 @@ export default function CommunitiesPage() {
 
   const loadPendingRequests = async (userId: string) => {
     try {
-      const joinRequestsRef = collection(db, 'joinRequests');
-      const pendingQuery = query(
-        joinRequestsRef,
-        where('userId', '==', userId),
-        where('status', '==', 'pending')
-      );
-      const pendingSnap = await getDocs(pendingQuery);
+      // Since join requests are now in subcollections, we need to check
+      // pending requests for communities where user has submitted requests
+      // This approach checks the user's interaction history with communities
+      const pendingCommunityIds: string[] = [];
       
-      const pendingCommunityIds = pendingSnap.docs.map(doc => doc.data().communityId);
+      // Get all communities to check for pending requests
+      // Note: This is less efficient than the old approach but necessary with subcollections
+      const communitiesRef = collection(db, 'communities');
+      const communitiesSnap = await getDocs(communitiesRef);
+      
+      for (const communityDoc of communitiesSnap.docs) {
+        const communityId = communityDoc.id;
+        const joinRequestsRef = collection(db, 'communities', communityId, 'joinRequests');
+        const pendingQuery = query(
+          joinRequestsRef,
+          where('userId', '==', userId),
+          where('status', '==', 'pending')
+        );
+        const pendingSnap = await getDocs(pendingQuery);
+        
+        if (!pendingSnap.empty) {
+          pendingCommunityIds.push(communityId);
+        }
+      }
+      
       setPendingRequests(pendingCommunityIds);
     } catch (error) {
       console.error('Error loading pending requests:', error);
@@ -208,13 +224,12 @@ export default function CommunitiesPage() {
       }
 
       // Get pending join requests for these communities
-      const joinRequestsRef = collection(db, 'joinRequests');
       const counts: {[communityId: string]: number} = {};
       
       for (const communityId of allModeratedCommunities) {
+        const joinRequestsRef = collection(db, 'communities', communityId, 'joinRequests');
         const pendingQuery = query(
           joinRequestsRef,
-          where('communityId', '==', communityId),
           where('status', '==', 'pending')
         );
         const pendingSnap = await getDocs(pendingQuery);
@@ -729,11 +744,10 @@ export default function CommunitiesPage() {
     
     try {
       // Double-check no existing pending request
-      const joinRequestsRef = collection(db, 'joinRequests');
+      const joinRequestsRef = collection(db, 'communities', communityId, 'joinRequests');
       const existingRequestQuery = query(
         joinRequestsRef,
         where('userId', '==', user.uid),
-        where('communityId', '==', communityId),
         where('status', '==', 'pending')
       );
       const existingRequestSnap = await getDocs(existingRequestQuery);
@@ -752,16 +766,19 @@ export default function CommunitiesPage() {
       const displayName = userData.username || user.email?.split('@')[0] || 'Unknown User';
 
       // Create join request
-      await addDoc(joinRequestsRef, {
+      const joinRequestData = {
         userId: user.uid,
         userName: displayName,
         userEmail: user.email || '',
-        communityId: communityId,
-        communityName: communityName,
         answers: answers,
         status: 'pending',
         createdAt: serverTimestamp()
-      });
+      };
+      
+      console.log('📝 Creating join request with data:', joinRequestData);
+      console.log('📝 Answers being saved:', answers);
+      
+      await addDoc(joinRequestsRef, joinRequestData);
 
       // Send notification to creator and all admins
       const moderatorIds = [communityData.creatorId];
@@ -787,6 +804,8 @@ export default function CommunitiesPage() {
             read: false,
             fromUserId: user.uid,
             fromUserName: displayName,
+            communityId: communityId,
+            communityName: communityName,
             data: {
               communityId: communityId,
               communityName: communityName
