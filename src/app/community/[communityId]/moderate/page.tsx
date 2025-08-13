@@ -71,6 +71,7 @@ interface JoinRequest {
   answers: { question: string; answer: string }[];
   status: 'pending' | 'approved' | 'rejected';
   createdAt: any;
+  requestedAt?: any;
   reviewedAt?: any;
   reviewedBy?: string;
 }
