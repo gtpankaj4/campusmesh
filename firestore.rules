@@ -22,9 +22,19 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
     
-    // Posts - allow read for authenticated users, write for authenticated users
+    // Posts - allow read with community-based filtering
     match /posts/{postId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && (
+        // Allow posts without communityId (general posts)
+        !('communityId' in resource.data) ||
+        // Allow posts from public communities
+        (('communityId' in resource.data) && 
+         get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.isPrivate != true) ||
+        // Allow posts from private communities if user is a member
+        (('communityId' in resource.data) && 
+         get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.isPrivate == true &&
+         exists(/databases/$(database)/documents/users/$(request.auth.uid)/communities/$(resource.data.communityId)))
+      );
       allow write: if request.auth != null;
     }
     

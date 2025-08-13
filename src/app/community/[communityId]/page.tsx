@@ -11,6 +11,11 @@ import PostInteractions from "@/components/PostInteractions";
 import RepBadge from "@/components/RepBadge";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
+// Add body scroll lock for modals
+const useModalScrollLock = (showEnrollmentForm: boolean, showCreatePostModal: boolean) => {
+  useBodyScrollLock(showEnrollmentForm || showCreatePostModal);
+};
+
 interface Community {
   id: string;
   name: string;
@@ -59,9 +64,19 @@ export default function CommunityPage() {
   const [activeSubmesh, setActiveSubmesh] = useState<string>('All');
   const [showEnrollmentForm, setShowEnrollmentForm] = useState(false);
   const [enrollmentAnswers, setEnrollmentAnswers] = useState<{ [key: string]: string }>({});
+  const [showCreatePostModal, setShowCreatePostModal] = useState(false);
+  const [postFormData, setPostFormData] = useState({
+    title: '',
+    description: '',
+    submessId: ''
+  });
+  const [isSubmittingPost, setIsSubmittingPost] = useState(false);
   const router = useRouter();
   const params = useParams();
   const communityId = params.communityId as string;
+
+  // Use scroll lock for modals
+  useModalScrollLock(showEnrollmentForm, showCreatePostModal);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -225,6 +240,67 @@ export default function CommunityPage() {
     }
   };
 
+  const createPost = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !community || isSubmittingPost) return;
+
+    setIsSubmittingPost(true);
+    try {
+      const postData: any = {
+        title: postFormData.title.trim(),
+        description: postFormData.description.trim(),
+        type: postFormData.submessId || 'General',
+        userId: user.uid,
+        createdAt: serverTimestamp(),
+        userEmail: user.email || '',
+        communityId: communityId,
+        communityName: community.name
+      };
+
+      // Add submesh information if selected
+      if (postFormData.submessId && postFormData.submessId.trim() !== '') {
+        const selectedSubmesh = community.submesses?.find(s => s.name === postFormData.submessId);
+        if (selectedSubmesh) {
+          postData.submessId = postFormData.submessId;
+          postData.submessName = postFormData.submessId;
+        }
+      }
+
+      await addDoc(collection(db, 'posts'), postData);
+
+      // Update user reputation (+10 for creating a post)
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+      
+      if (!userSnap.exists()) {
+        const username = user.email?.split('@')[0] || 'User';
+        await setDoc(userRef, {
+          email: user.email || '',
+          username: username,
+          reputation: 10,
+          postsCount: 1,
+          commentsCount: 0,
+          communitiesCount: 0,
+          joinDate: serverTimestamp()
+        });
+      } else {
+        await updateDoc(userRef, {
+          reputation: increment(10),
+          postsCount: increment(1)
+        });
+      }
+
+      setShowCreatePostModal(false);
+      setPostFormData({ title: '', description: '', submessId: '' });
+      alert('Post created successfully! +10 reputation gained!');
+    } catch (error) {
+      console.error('Error creating post:', error);
+      alert('Error creating post. Please try again.');
+    } finally {
+      setIsSubmittingPost(false);
+    }
+  };
+
   const joinCommunity = async () => {
     if (!user || !community || joining) return;
     
@@ -342,20 +418,28 @@ export default function CommunityPage() {
                   {joining ? 'Joining...' : 'Join Mesh'}
                 </button>
               ) : (
-                <>
-                  <div className="bg-green-100 text-green-800 px-4 py-2 rounded-lg flex items-center">
-                    <span className="text-sm font-medium">✓ Joined</span>
+                <div className="flex items-center space-x-2 flex-wrap">
+                  <div className="bg-green-100 text-green-800 px-3 py-2 rounded-lg flex items-center">
+                    <span className="text-sm font-medium hidden sm:inline">✓ Joined</span>
+                    <span className="text-sm font-medium sm:hidden">✓</span>
                   </div>
+                  <button
+                    onClick={() => setShowCreatePostModal(true)}
+                    className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+                  >
+                    <PlusIcon className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">Create Post</span>
+                  </button>
                   {(userRole === 'moderator' || userRole === 'admin') && (
                     <button
                       onClick={() => router.push(`/community/${communityId}/moderate`)}
-                      className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center"
+                      className="bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 flex items-center"
                     >
-                      <CogIcon className="h-4 w-4 mr-2" />
-                      Moderate
+                      <CogIcon className="h-4 w-4 sm:mr-1" />
+                      <span className="hidden sm:inline">Moderate</span>
                     </button>
                   )}
-                </>
+                </div>
               )}
             </div>
           </div>
@@ -578,6 +662,101 @@ export default function CommunityPage() {
           </>
         )}
       </div>
+
+      {/* Create Post Modal */}
+      {showCreatePostModal && (
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Create Post in {community?.name}</h3>
+                <button
+                  onClick={() => {
+                    setShowCreatePostModal(false);
+                    setPostFormData({ title: '', description: '', submessId: '' });
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <form onSubmit={createPost} className="space-y-4">
+                {/* Submesh Selection */}
+                {community?.submesses && community.submesses.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Submesh (Optional)
+                    </label>
+                    <select
+                      value={postFormData.submessId}
+                      onChange={(e) => setPostFormData(prev => ({ ...prev, submessId: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                    >
+                      <option value="">General</option>
+                      {community.submesses.map((submesh) => (
+                        <option key={submesh.name} value={submesh.name}>
+                          {submesh.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Title */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Title <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={postFormData.title}
+                    onChange={(e) => setPostFormData(prev => ({ ...prev, title: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                    placeholder="What's your post about?"
+                    required
+                  />
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Description <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={postFormData.description}
+                    onChange={(e) => setPostFormData(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                    rows={4}
+                    placeholder="Share your thoughts..."
+                    required
+                  />
+                </div>
+                
+                <div className="flex space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreatePostModal(false);
+                      setPostFormData({ title: '', description: '', submessId: '' });
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingPost}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {isSubmittingPost ? 'Creating...' : 'Create Post'}
+                  </button>
+                </div>
+              </form>
+          </div>
+        </div>
+      )}
 
       {/* Enrollment Form Modal */}
       {showEnrollmentForm && community?.enrollmentQuestions && (

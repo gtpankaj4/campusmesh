@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, increment, getDoc, where, setDoc, getDocs, deleteDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { PlusIcon, CheckCircleIcon, XCircleIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, CheckCircleIcon, XCircleIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, ChevronDownIcon, UserGroupIcon } from "@heroicons/react/24/outline";
 import Toast from "@/components/Toast";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
@@ -86,6 +86,8 @@ export default function DashboardPage() {
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCommunityFilter, setSelectedCommunityFilter] = useState<string>('all');
+  const [meshSearchQuery, setMeshSearchQuery] = useState('');
+  const [showMeshDropdown, setShowMeshDropdown] = useState(false);
 
 
 
@@ -203,40 +205,7 @@ export default function DashboardPage() {
     }
   };
 
-  // Filter private community posts to only show to members
-  const filterPrivateCommunityPosts = async (posts: Post[]): Promise<Post[]> => {
-    if (!user) return posts.filter(post => !post.communityId); // Show only non-community posts if not logged in
-    
-    try {
-      // Get user's communities
-      const userCommunitiesRef = collection(db, 'users', user.uid, 'communities');
-      const userCommunitiesSnap = await getDocs(userCommunitiesRef);
-      const userCommunityIds = new Set(userCommunitiesSnap.docs.map(doc => doc.data().communityId));
-      
-      // Get all communities to check which are private
-      const communitiesRef = collection(db, 'communities');
-      const communitiesSnap = await getDocs(communitiesRef);
-      const privateCommunityIds = new Set();
-      
-      communitiesSnap.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.isPrivate) {
-          privateCommunityIds.add(doc.id);
-        }
-      });
-      
-      // Filter posts: allow all non-community posts and public community posts, 
-      // only allow private community posts if user is a member
-      return posts.filter(post => {
-        if (!post.communityId) return true; // Non-community posts are always visible
-        if (!privateCommunityIds.has(post.communityId)) return true; // Public community posts are always visible
-        return userCommunityIds.has(post.communityId); // Private community posts only if user is member
-      });
-    } catch (error) {
-      console.error('Error filtering private community posts:', error);
-      return posts; // Return all posts if filtering fails
-    }
-  };
+  // Note: Private community post filtering is now handled by Firestore security rules
 
   const joinCommunity = async (communityId: string, communityName: string) => {
     if (!user || joiningCommunity) return;
@@ -352,80 +321,68 @@ export default function DashboardPage() {
 
         console.log('Final converted posts:', convertedPosts);
         
-        // For new users, prioritize posts from non-private communities with high engagement
-        if (userProfile && isNewUser(userProfile)) {
-          console.log('New user detected, prioritizing engaging posts from public communities');
+        // TEMPORARY: Disable aggressive client-side filtering, rely on Firestore rules
+        console.log('🛡️ RELYING ON FIRESTORE RULES FOR SECURITY...');
+        console.log('📊 User communities loaded:', userCommunities.length, userCommunities);
+        
+        // Only apply minimal filtering for new users with no communities
+        let filteredPosts = convertedPosts;
+        
+        if (userProfile && isNewUser(userProfile) && userCommunities.length === 0) {
+          console.log('👶 NEW USER: Filtering to show only general posts');
+          filteredPosts = convertedPosts.filter(post => !post.communityId);
+          console.log(`🔒 NEW USER FILTER: ${convertedPosts.length} posts → ${filteredPosts.length} posts (showing only general posts)`);
+        } else {
+          console.log('👤 EXISTING USER: Showing all posts (Firestore rules handle security)');
+          filteredPosts = convertedPosts;
+        }
+        
+        // For new users with no communities, show engaging public posts
+        if (userProfile && isNewUser(userProfile) && userCommunities.length === 0) {
+          console.log('New user with no communities detected, showing engaging public posts');
           
           try {
-            // Load community data to filter non-private posts
-            const communitiesRef = collection(db, 'communities');
-            const communitiesSnapshot = await getDocs(communitiesRef);
-            const publicCommunityIds = new Set();
-            
-            communitiesSnapshot.docs.forEach(doc => {
-              const data = doc.data();
-              if (!data.isPrivate) {
-                publicCommunityIds.add(doc.id);
-              }
-            });
-            
-            // Separate posts into public community posts and general posts
-            const publicCommunityPosts = convertedPosts.filter(post => 
-              post.communityId && publicCommunityIds.has(post.communityId)
-            );
-            const generalPosts = convertedPosts.filter(post => !post.communityId);
-            const privateCommunityPosts = convertedPosts.filter(post => 
-              post.communityId && !publicCommunityIds.has(post.communityId)
+            // Only show general posts and public community posts for new users
+            const publicAndGeneralPosts = filteredPosts.filter(post => 
+              !post.communityId // Only general posts for new users
             );
             
-            // Load comment counts for sorting by engagement
-            const postsWithCounts = await Promise.all(convertedPosts.map(async (post) => {
-              try {
-                const commentsRef = collection(db, 'posts', post.id, 'comments');
-                const commentsSnapshot = await getDocs(commentsRef);
-                return { ...post, commentCount: commentsSnapshot.size };
-              } catch (error) {
-                return { ...post, commentCount: 0 };
-              }
-            }));
-            
-            // Sort public community posts by engagement (comment count) descending
-            const sortedPublicPosts = postsWithCounts
-              .filter(post => post.communityId && publicCommunityIds.has(post.communityId))
-              .sort((a, b) => b.commentCount - a.commentCount);
-            
-            const sortedGeneralPosts = postsWithCounts
-              .filter(post => !post.communityId)
-              .sort((a, b) => b.commentCount - a.commentCount);
-            
-            const sortedPrivatePosts = postsWithCounts
-              .filter(post => post.communityId && !publicCommunityIds.has(post.communityId))
-              .sort((a, b) => {
+            if (publicAndGeneralPosts.length === 0) {
+              // No posts available for new user
+              setPosts([]);
+              console.log('No posts available for new user');
+            } else {
+              // Load comment counts for sorting by engagement
+              const postsWithCounts = await Promise.all(publicAndGeneralPosts.map(async (post) => {
+                try {
+                  const commentsRef = collection(db, 'posts', post.id, 'comments');
+                  const commentsSnapshot = await getDocs(commentsRef);
+                  return { ...post, commentCount: commentsSnapshot.size };
+                } catch (error) {
+                  return { ...post, commentCount: 0 };
+                }
+              }));
+              
+              // Sort by engagement (comment count) descending, then by recency
+              const sortedPosts = postsWithCounts.sort((a, b) => {
+                if (b.commentCount !== a.commentCount) {
+                  return b.commentCount - a.commentCount;
+                }
                 const aTime = new Date(a.postedAt).getTime();
                 const bTime = new Date(b.postedAt).getTime();
-                return bTime - aTime; // Recent first for private posts
+                return bTime - aTime;
               });
-            
-            // Combine: high-engagement public posts first, then general posts, then private posts
-            const prioritizedPosts = [
-              ...sortedPublicPosts.slice(0, Math.max(3, Math.floor(sortedPublicPosts.length * 0.6))),
-              ...sortedGeneralPosts.slice(0, Math.max(2, Math.floor(sortedGeneralPosts.length * 0.4))),
-              ...sortedPrivatePosts
-            ];
-            
-            console.log('Prioritized posts for new user:', prioritizedPosts.length);
-            setPosts(prioritizedPosts.map(({ commentCount, ...post }) => post)); // Remove commentCount before setting
-            
-
-            
+              
+              console.log('Sorted engaging posts for new user:', sortedPosts.length);
+              setPosts(sortedPosts.map(({ commentCount, ...post }) => post));
+            }
           } catch (error) {
-            console.error('Error prioritizing posts for new user:', error);
-            // Fallback to regular posts
-            setPosts(convertedPosts);
+            console.error('Error loading posts for new user:', error);
+            setPosts(filteredPosts);
           }
         } else {
-          // Regular user - show posts in chronological order
-          setPosts(convertedPosts);
+          // Regular user or new user with communities - show filtered posts
+          setPosts(filteredPosts);
         }
         
         console.log('=== LOADING POSTS END ===');
@@ -543,6 +500,8 @@ export default function DashboardPage() {
 
       setShowModal(false);
       setFormData({ title: '', description: '', type: '', communityId: '', submessId: '' });
+      setMeshSearchQuery('');
+      setShowMeshDropdown(false);
       showToast(`Post created! +10 reputation gained!`, 'success');
     } catch (error) {
       console.error('Error creating post:', error);
@@ -684,10 +643,6 @@ export default function DashboardPage() {
         setUser(user);
         await loadUserProfile(user.uid);
         await loadUserCommunities(user.uid);
-        
-        // Set up posts listener
-        const unsubscribePosts = loadPosts();
-        setPostsUnsubscribe(() => unsubscribePosts);
       } else {
         router.push("/login");
       }
@@ -697,6 +652,21 @@ export default function DashboardPage() {
       unsubscribe();
     };
   }, [router]);
+
+  // Load posts after user and communities are loaded
+  useEffect(() => {
+    if (user && userProfile) {
+      console.log('🔄 Setting up posts listener with user communities:', userCommunities.length);
+      const unsubscribePosts = loadPosts();
+      setPostsUnsubscribe(() => unsubscribePosts);
+      
+      return () => {
+        if (unsubscribePosts) {
+          unsubscribePosts();
+        }
+      };
+    }
+  }, [user, userProfile, userCommunities]); // Add userCommunities as dependency
 
   // Reset active tab when community filter changes
   useEffect(() => {
@@ -742,6 +712,23 @@ export default function DashboardPage() {
     }
   }, [user, userCommunities]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (!target.closest('.mesh-dropdown-container')) {
+        setShowMeshDropdown(false);
+      }
+    };
+
+    if (showMeshDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showMeshDropdown]);
+
+
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar userProfile={userProfile} />
@@ -753,13 +740,21 @@ export default function DashboardPage() {
         <div className="px-4 py-6 pt-8">
           {/* Search Posts - Mobile */}
           <div className="bg-white rounded-xl shadow-sm border p-4 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Search Posts</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-gray-900">Search Posts</h3>
+              <button
+                onClick={() => setShowModal(true)}
+                className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 flex items-center"
+              >
+                <PlusIcon className="h-4 w-4" />
+              </button>
+            </div>
             <fieldset className="relative">
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search posts, communities, or topics..."
+                placeholder="Search posts, meshes, or topics..."
                 className="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-500"
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -779,14 +774,14 @@ export default function DashboardPage() {
             {/* Community Dropdown Filter */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Community
+                Select Mesh
               </label>
               <select
                 value={selectedCommunityFilter}
                 onChange={(e) => setSelectedCommunityFilter(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
               >
-                <option value="all">All Communities (Latest Posts)</option>
+                <option value="all">All Meshes (Latest Posts)</option>
                 {userCommunities.map((community) => (
                   <option key={community.communityId} value={community.communityId}>
                     {community.communityName}
@@ -952,16 +947,45 @@ export default function DashboardPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
-                <p className="text-sm text-gray-500 mb-3">
-                  {activeTab === 'All' ? 'No posts yet' : `No posts in ${activeTab}`}
-                </p>
-                <button
-                  onClick={() => setShowModal(true)}
-                  className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-md text-sm"
-                >
-                  <PlusIcon className="h-4 w-4 mr-1" />
-                  New Post
-                </button>
+                {userProfile && isNewUser(userProfile) && userCommunities.length === 0 ? (
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-500 mb-3">
+                      Welcome! No posts available yet.
+                    </p>
+                    <p className="text-xs text-gray-400 mb-4">
+                      Join some mesh to see posts from meshes, or create your own post!
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                      <button
+                        onClick={() => router.push('/community')}
+                        className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 transition-colors"
+                      >
+                        <UserGroupIcon className="h-4 w-4 mr-1" />
+                        Find Mesh
+                      </button>
+                      <button
+                        onClick={() => router.push('/create-community')}
+                        className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors"
+                      >
+                        <PlusIcon className="h-4 w-4 mr-1" />
+                        Create Mesh
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-500 mb-3">
+                      {activeTab === 'All' ? 'No posts yet' : `No posts in ${activeTab}`}
+                    </p>
+                    <button
+                      onClick={() => setShowModal(true)}
+                      className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-md text-sm"
+                    >
+                      <PlusIcon className="h-4 w-4 mr-1" />
+                      New Post
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -1092,14 +1116,14 @@ export default function DashboardPage() {
                 {/* Community Dropdown Filter */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Community
+                    Select Mesh
                   </label>
                   <select
                     value={selectedCommunityFilter}
                     onChange={(e) => setSelectedCommunityFilter(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                   >
-                    <option value="all">All Communities (Latest Posts)</option>
+                    <option value="all">All Meshes (Latest Posts)</option>
                     {userCommunities.map((community) => (
                       <option key={community.communityId} value={community.communityId}>
                         {community.communityName}
@@ -1181,13 +1205,22 @@ export default function DashboardPage() {
             <div className="col-span-2">
               {/* Search Box */}
               <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">Search Posts</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-semibold text-gray-900">Search Posts</h3>
+                  <button
+                    onClick={() => setShowModal(true)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+                  >
+                    <PlusIcon className="h-4 w-4 mr-2" />
+                    <span>Create Post</span>
+                  </button>
+                </div>
                 <fieldset className="relative">
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search posts, communities, or topics..."
+                    placeholder="Search posts, meshes, or topics..."
                     className="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-500"
                   />
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -1350,14 +1383,36 @@ export default function DashboardPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                     </div>
-                    <p className="text-sm text-gray-500 mb-3">No posts in {activeTab}</p>
-                    <button
-                      onClick={() => setShowModal(true)}
-                      className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-md text-sm"
-                    >
-                      <PlusIcon className="h-4 w-4 mr-1" />
-                      New Post
-                    </button>
+                    {userProfile && isNewUser(userProfile) && userCommunities.length === 0 ? (
+                      <div className="space-y-4">
+                        <p className="text-lg font-medium text-gray-700 mb-2">
+                          Welcome to Campesh - Your Campus, Your Mesh!
+                        </p>
+                        <p className="text-sm text-gray-500 mb-4">
+                          No posts available yet. Join some meshes to see posts from meshes, or create your own post to get started!
+                        </p>
+                        <div className="flex justify-center">
+                          <button
+                            onClick={() => router.push('/community')}
+                            className="inline-flex items-center px-6 py-3 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+                          >
+                            <UserGroupIcon className="h-5 w-5 mr-2" />
+                            Find Meshes
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <p className="text-sm text-gray-500 mb-3">No posts in {activeTab}</p>
+                        <button
+                          onClick={() => setShowModal(true)}
+                          className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-md text-sm"
+                        >
+                          <PlusIcon className="h-4 w-4 mr-1" />
+                          New Post
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -1480,47 +1535,90 @@ export default function DashboardPage() {
 
       {/* Create Post Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-30">
-          <div className="bg-white rounded-xl w-full max-w-md max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-4 sm:px-6 py-3 sm:py-4 rounded-t-xl">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">NEW POST</h2>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowModal(false);
-                    setFormData({ title: '', description: '', type: '', communityId: '', submessId: '' });
-                  }}
-                  className="text-gray-500 hover:text-gray-700 text-sm font-medium"
-                >
-                  ✕
-                </button>
-              </div>
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Create post</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModal(false);
+                  setFormData({ title: '', description: '', type: '', communityId: '', submessId: '' });
+                  setMeshSearchQuery('');
+                  setShowMeshDropdown(false);
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-            
-            <div className="p-4 sm:p-6">
             <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
               {userCommunities.length > 0 && (
                 <div>
-                  <select 
-                    value={formData.communityId}
-                    onChange={(e) => {
-                      setFormData({ 
-                        ...formData, 
-                        communityId: e.target.value,
-                        submessId: '' // Reset submess when community changes
-                      });
-                    }}
-                    className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 text-base"
-                    required
-                  >
-                    <option value="">📍 Select Mesh</option>
-                    {userCommunities.map((community) => (
-                      <option key={community.communityId} value={community.communityId}>
-                        {community.communityName}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative mesh-dropdown-container">
+                    <input
+                      type="text"
+                      value={meshSearchQuery}
+                      onChange={(e) => {
+                        setMeshSearchQuery(e.target.value);
+                        setShowMeshDropdown(true);
+                      }}
+                      onFocus={() => setShowMeshDropdown(true)}
+                      placeholder="Select a mesh"
+                      className="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 text-base bg-white"
+                      required={!formData.communityId}
+                    />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+                    
+                    {/* Dropdown */}
+                    {showMeshDropdown && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {userCommunities
+                          .filter(community => 
+                            community.communityName.toLowerCase().includes(meshSearchQuery.toLowerCase())
+                          )
+                          .map((community) => (
+                            <div
+                              key={community.communityId}
+                              onClick={() => {
+                                setFormData({ 
+                                  ...formData, 
+                                  communityId: community.communityId,
+                                  submessId: '' // Reset submesh when community changes
+                                });
+                                setMeshSearchQuery(community.communityName);
+                                setShowMeshDropdown(false);
+                              }}
+                              className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                            >
+                              <div className="flex items-center space-x-3">
+                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                  <span className="text-blue-600 font-bold text-sm">
+                                    {community.communityName.charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                                <div>
+                                  <div className="font-medium text-gray-900">{community.communityName}</div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        {userCommunities.filter(community => 
+                          community.communityName.toLowerCase().includes(meshSearchQuery.toLowerCase())
+                        ).length === 0 && (
+                          <div className="px-4 py-3 text-gray-500 text-center">
+                            No meshes found
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1532,7 +1630,7 @@ export default function DashboardPage() {
                     className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 text-base"
                     required
                   >
-                    <option value="">🏷️ Select Submesh</option>
+                    <option value="">Select Submesh</option>
                     {communitySubmesses[formData.communityId].map((submess) => (
                       <option key={submess.id} value={submess.name}>
                         {submess.name}
@@ -1570,12 +1668,11 @@ export default function DashboardPage() {
                   disabled={isSubmitting || !formData.title.trim() || !formData.description.trim()}
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-base"
                 >
-                  {isSubmitting ? '📤 Posting...' : '🚀 Share Post'}
+                  {isSubmitting ? 'Creating...' : 'Create Post'}
                 </button>
               </div>
 
             </form>
-            </div>
           </div>
         </div>
       )}
