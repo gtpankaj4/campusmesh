@@ -163,14 +163,14 @@ export default function PostInteractions({
   };
 
   return (
-    <div className={`flex space-x-1 mt-4 pt-3 border-t border-gray-100 ${className}`}>
-      <div className="flex items-center justify-between w-full px-2">
-        {/* Upvote Button */}
+    <div className={`flex space-x-1 mt-3 pt-2 border-t border-gray-100 ${className}`}>
+      <div className="flex items-center justify-between w-full px-1">
+        {/* Upvote Button - Reddit-like */}
         <div className="relative flex items-center">
           <button
             onClick={handleUpvote}
             disabled={loading || !user}
-            className={`flex items-center space-x-1 px-2 py-2 rounded-lg transition-all duration-200 ${
+            className={`flex items-center space-x-1 px-2 py-1 rounded-lg transition-all duration-200 ${
               hasUpvoted 
                 ? 'bg-green-50 hover:bg-green-100' 
                 : 'hover:bg-green-50'
@@ -181,18 +181,18 @@ export default function PostInteractions({
             ) : (
               <FaceSmileIcon className="h-4 w-4 text-gray-400" />
             )}
-            <span className="text-sm font-medium text-gray-600">
+            <span className="text-xs font-medium text-gray-600">
               {upvoteCount}
             </span>
           </button>
         </div>
 
-        {/* Downvote Button */}
+        {/* Downvote Button - Reddit-like */}
         <div className="relative flex items-center">
           <button
             onClick={handleDownvote}
             disabled={loading || !user}
-            className={`flex items-center space-x-1 px-2 py-2 rounded-lg transition-all duration-200 ${
+            className={`flex items-center space-x-1 px-2 py-1 rounded-lg transition-all duration-200 ${
               hasDownvoted 
                 ? 'bg-red-50 hover:bg-red-100' 
                 : 'hover:bg-red-50'
@@ -203,13 +203,13 @@ export default function PostInteractions({
             ) : (
               <FaceFrownIcon className="h-4 w-4 text-gray-400" />
             )}
-            <span className="text-sm font-medium text-gray-600">
+            <span className="text-xs font-medium text-gray-600">
               {downvoteCount}
             </span>
           </button>
         </div>
 
-        {/* Comment Button */}
+        {/* Comment Button - Reddit-like */}
         <div className="relative flex items-center flex-1 justify-center">
           <button
             onClick={(e) => {
@@ -217,19 +217,19 @@ export default function PostInteractions({
               e.stopPropagation();
               onCommentClick?.(e);
             }}
-            className="flex items-center space-x-1 px-3 py-2 rounded-lg text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200"
+            className="flex items-center space-x-1 px-2 py-1 rounded-lg text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200"
           >
             <ChatBubbleLeftIcon className="h-4 w-4" />
-            <span className="text-sm font-medium">{commentCount}</span>
+            <span className="text-xs font-medium">{commentCount}</span>
           </button>
         </div>
 
-        {/* Chat Button */}
+        {/* Chat Button - Reddit-like */}
         <div className="relative flex items-center justify-end">
           <button
             onClick={handleChat}
             disabled={!user || !postUserId}
-            className="flex items-center px-3 py-2 rounded-lg text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center px-2 py-1 rounded-lg text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <PaperAirplaneIcon className="h-4 w-4" />
           </button>

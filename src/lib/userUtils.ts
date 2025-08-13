@@ -2,6 +2,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { ref, get } from 'firebase/database';
 import { db, realtimeDb } from './firebase';
 import { User } from 'firebase/auth';
+import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 
 export interface UserData {
   uid: string;
@@ -10,6 +11,20 @@ export interface UserData {
   email?: string;
   reputation?: number;
   photoURL?: string;
+}
+
+/**
+ * Navigate to community with return path for proper back navigation
+ */
+export function navigateToCommunityWithReturn(
+  router: AppRouterInstance,
+  communityId: string | undefined,
+  currentPath?: string
+) {
+  if (!communityId) return;
+  
+  const returnPath = currentPath || window.location.pathname;
+  router.push(`/community/${communityId}?returnTo=${encodeURIComponent(returnPath)}`);
 }
 
 /**

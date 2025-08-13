@@ -300,6 +300,16 @@ export default function PostPage() {
     return `${Math.floor(diffInSeconds / 604800)}w`;
   };
 
+  const handleCommunityNavigation = (communityId: string | undefined, communityName: string | undefined) => {
+    if (!communityId || !communityName) return;
+    
+    // Store the current post URL as the return path
+    const currentPath = window.location.pathname;
+    
+    // Navigate to the community with return path as query parameter
+    router.push(`/community/${communityId}?returnTo=${encodeURIComponent(currentPath)}`);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -326,89 +336,112 @@ export default function PostPage() {
     <div className="min-h-screen bg-gray-50">
       <Navbar />
 
-      <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6 pt-6 sm:pt-8">
+      <div className="max-w-4xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-6 pt-4 sm:pt-8">
         {/* Header */}
-        <div className="flex items-center mb-6">
+        <div className="flex items-center mb-4 sm:mb-6">
           <button
             onClick={() => router.back()}
-            className="p-2 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 mr-4"
+            className="p-2 sm:p-3 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 mr-2 sm:mr-4"
           >
-            <ArrowLeftIcon className="h-5 w-5" />
+            <ArrowLeftIcon className="h-5 w-5 sm:h-6 sm:w-6" />
           </button>
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">Post</h1>
+            <h1 className="text-base sm:text-lg font-semibold text-gray-900">Post</h1>
             {post.communityName && (
-              <p className="text-sm text-gray-500">{post.communityName}</p>
+              <p className="text-xs sm:text-sm text-gray-500">{post.communityName}</p>
             )}
           </div>
         </div>
 
-        {/* Post Content - Bigger Version */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 mb-8">
-          <div className="p-8">
-            {/* Post Header - Same style as card but bigger */}
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center text-sm text-gray-500 space-x-1 flex-1 min-w-0">
-                <button className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer truncate text-lg">
+        {/* Post Content - Mobile Responsive */}
+        <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg border border-gray-200 mb-6 sm:mb-8">
+          <div className="p-4 sm:p-6 lg:p-8">
+            {/* Post Header - Responsive sizing */}
+            <div className="flex items-center justify-between mb-4 sm:mb-6">
+              <div className="flex items-center text-xs sm:text-sm text-gray-500 space-x-1 flex-1 min-w-0 lg:min-w-max lg:max-w-none">
+                <button className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer text-sm sm:text-base truncate sm:truncate lg:whitespace-normal lg:overflow-visible">
                   {post.userEmail.split("@")[0]}
                 </button>
                 {post.communityName && (
                   <>
-                    <span className="shrink-0 text-lg">›</span>
+                    <span className="shrink-0 text-sm sm:text-base">›</span>
                     <span
-                      className="px-3 py-1 bg-stone-100 text-stone-700 rounded-md text-sm hover:bg-stone-200 cursor-pointer transition-colors truncate"
+                      onClick={() => handleCommunityNavigation(post.communityId, post.communityName)}
+                      className="px-2 sm:px-3 py-1 bg-stone-100 text-stone-700 rounded-md text-xs hover:bg-stone-200 cursor-pointer transition-colors"
                       title={post.communityName}
                     >
-                      {post.communityName.length > 15
-                        ? post.communityName.substring(0, 12) + "..."
-                        : post.communityName}
+                      <span className="sm:hidden">
+                        {post.communityName.length > 10
+                          ? post.communityName.substring(0, 8) + "..."
+                          : post.communityName}
+                      </span>
+                      <span className="hidden sm:inline lg:hidden">
+                        {post.communityName.length > 15
+                          ? post.communityName.substring(0, 12) + "..."
+                          : post.communityName}
+                      </span>
+                      <span className="hidden lg:inline">
+                        {post.communityName}
+                      </span>
                     </span>
                   </>
                 )}
                 {post.submessName && (
                   <>
-                    <span className="shrink-0 text-lg">›</span>
-                    <span className="px-3 py-1 bg-amber-50 text-amber-700 rounded-md text-sm font-medium truncate">
-                      {post.submessName}
+                    <span className="shrink-0 text-sm">›</span>
+                    <span className="px-2 py-1 bg-amber-50 text-amber-700 rounded-md text-xs font-medium">
+                      <span className="sm:hidden">
+                        {post.submessName.length > 8
+                          ? post.submessName.substring(0, 6) + "..."
+                          : post.submessName}
+                      </span>
+                      <span className="hidden sm:inline lg:hidden">
+                        {post.submessName.length > 12
+                          ? post.submessName.substring(0, 10) + "..."
+                          : post.submessName}
+                      </span>
+                      <span className="hidden lg:inline">
+                        {post.submessName}
+                      </span>
                     </span>
                   </>
                 )}
               </div>
-              <span className="text-sm text-gray-400 shrink-0 ml-4">
+              <span className="text-xs text-gray-400 shrink-0 ml-2">
                 {formatTimeAgo(post.createdAt?.toDate?.() || new Date())}
               </span>
             </div>
 
-            {/* Post Title - Bigger */}
-            <h1 className="font-bold text-gray-900 text-3xl leading-tight mb-6 cursor-pointer hover:text-blue-600 transition-colors">
+            {/* Post Title - Reddit-like sizing */}
+            <h1 className="font-bold text-gray-900 text-base sm:text-lg lg:text-xl leading-tight mb-4 sm:mb-6 cursor-pointer hover:text-blue-600 transition-colors">
               {post.title}
             </h1>
 
-            {/* Post Content - Bigger */}
-            <div className="mb-8">
-              <div className="text-gray-600 text-lg leading-relaxed">
+            {/* Post Content - Reddit-like sizing */}
+            <div className="mb-6 sm:mb-8">
+              <div className="text-gray-600 text-sm sm:text-base leading-relaxed">
                 <p className="whitespace-pre-wrap">{post.description}</p>
               </div>
             </div>
 
-            {/* Post Interactions - Same style as card */}
+            {/* Post Interactions - Responsive */}
             <div className="border-t border-gray-100">
               <PostInteractions
                 postId={post.id}
                 postUserId={post.userId}
                 onCommentClick={() => {}}
-                className="mt-0 pt-6 border-t-0"
+                className="mt-0 pt-4 sm:pt-6 border-t-0"
               />
             </div>
           </div>
         </div>
 
-        {/* Comment Input - Facebook Style */}
-        <div className="bg-white rounded-2xl shadow-sm border mb-6">
-          <div className="p-6">
-            <div className="flex items-start space-x-4">
-              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <span className="text-blue-600 font-semibold">
+        {/* Comment Input - Reddit-like */}
+        <div className="bg-white rounded-xl shadow-sm border mb-4">
+          <div className="p-3 sm:p-4">
+            <div className="flex items-start space-x-3">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-blue-600 font-semibold text-sm">
                   {user?.email?.charAt(0).toUpperCase()}
                 </span>
               </div>
@@ -420,7 +453,7 @@ export default function PostPage() {
                     placeholder={`Comment as ${
                       user?.email?.split("@")[0] || "User"
                     }`}
-                    className="w-full px-4 py-3 bg-gray-50 border-0 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white resize-none text-gray-900"
+                    className="w-full px-3 py-2 bg-gray-50 border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white resize-none text-gray-900 text-sm"
                     rows={2}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
@@ -432,9 +465,9 @@ export default function PostPage() {
                   {newComment.trim() && (
                     <button
                       onClick={addComment}
-                      className="absolute bottom-2 right-2 p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                      className="absolute bottom-2 right-2 p-1.5 sm:p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
                     >
-                      <PaperAirplaneIcon className="h-5 w-5" />
+                      <PaperAirplaneIcon className="h-4 w-4 sm:h-5 sm:w-5" />
                     </button>
                   )}
                 </div>
@@ -444,8 +477,7 @@ export default function PostPage() {
         </div>
 
         {/* Comments Section */}
-        <div className="space-y-4">
-          {console.log('🔍 Rendering comments:', comments.length, comments)}
+        <div className="space-y-3 sm:space-y-4">
           {comments.map((comment) => (
             <CommentThread
               key={comment.id}
@@ -469,15 +501,14 @@ export default function PostPage() {
           ))}
 
           {comments.length === 0 && (
-            <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
-              <ChatBubbleLeftIcon className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+            <div className="bg-white rounded-xl shadow-sm border p-6 sm:p-8 text-center">
+              <ChatBubbleLeftIcon className="h-10 w-10 sm:h-12 sm:w-12 text-gray-300 mx-auto mb-3 sm:mb-4" />
+              <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">
                 No comments yet
               </h3>
-              <p className="text-gray-500">
+              <p className="text-gray-500 text-sm sm:text-base">
                 Be the first to share your thoughts!
               </p>
-              <p className="text-xs text-gray-400 mt-2">Debug: {comments.length} comments loaded</p>
             </div>
           )}
         </div>
@@ -521,66 +552,64 @@ function CommentThread({
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border mb-4">
-      <div className="p-6">
+    <div className="bg-white rounded-xl shadow-sm border mb-3">
+      <div className="p-3 sm:p-4">
         {/* Main Comment */}
-        <div className="flex items-start space-x-4">
-          <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
-            <span className="text-gray-600 font-semibold">
+        <div className="flex items-start space-x-3">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+            <span className="text-gray-600 font-semibold text-sm">
               {comment.username.charAt(0).toUpperCase()}
             </span>
           </div>
 
           <div className="flex-1 min-w-0">
-            <div className="bg-gray-50 rounded-2xl px-5 py-4 relative">
-              <div className="flex items-center space-x-2 mb-2">
-                <h4 className="font-semibold text-gray-900 text-base">
+            <div className="bg-gray-50 rounded-lg px-3 py-2 sm:py-3 relative">
+              <div className="flex items-center space-x-2 mb-1">
+                <h4 className="font-semibold text-gray-900 text-sm">
                   {comment.username}
                 </h4>
               </div>
-              <p className="text-gray-700 text-base leading-relaxed whitespace-pre-wrap">
+              <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
                 {comment.text}
               </p>
-
-
             </div>
 
-            {/* Comment Actions */}
-            <div className="flex items-center space-x-6 mt-3 ml-5">
-              <span className="text-sm text-gray-500">
+            {/* Comment Actions - Reddit-like */}
+            <div className="flex items-center space-x-3 sm:space-x-4 mt-2 ml-3">
+              <span className="text-xs text-gray-500">
                 {formatTimeAgo(comment.createdAt?.toDate?.() || new Date())}
               </span>
               
-              {/* Happy Face */}
+              {/* Happy Face - Reddit-like */}
               <button
                 onClick={() => onReaction(comment.id, 'like')}
-                className={`flex items-center space-x-1 px-2 py-2 rounded-lg transition-all duration-200 ${
+                className={`flex items-center space-x-1 px-2 py-1 rounded-lg transition-all duration-200 ${
                   hasUserReacted('like') 
                     ? 'bg-green-50 hover:bg-green-100' 
                     : 'hover:bg-green-50'
                 }`}
               >
-                <FaceSmileIcon className={`h-4 w-4 ${
+                <FaceSmileIcon className={`h-3 w-3 ${
                   hasUserReacted('like') ? 'text-green-600' : 'text-gray-400'
                 }`} />
-                <span className="text-sm font-medium text-gray-600">
+                <span className="text-xs font-medium text-gray-600">
                   {(comment.reactions?.like?.length || 0)}
                 </span>
               </button>
 
-              {/* Frown Face */}
+              {/* Frown Face - Reddit-like */}
               <button
                 onClick={() => onReaction(comment.id, 'sad')}
-                className={`flex items-center space-x-1 px-2 py-2 rounded-lg transition-all duration-200 ${
+                className={`flex items-center space-x-1 px-2 py-1 rounded-lg transition-all duration-200 ${
                   hasUserReacted('sad') 
                     ? 'bg-red-50 hover:bg-red-100' 
                     : 'hover:bg-red-50'
                 }`}
               >
-                <FaceFrownIcon className={`h-4 w-4 ${
+                <FaceFrownIcon className={`h-3 w-3 ${
                   hasUserReacted('sad') ? 'text-red-600' : 'text-gray-400'
                 }`} />
-                <span className="text-sm font-medium text-gray-600">
+                <span className="text-xs font-medium text-gray-600">
                   {(comment.reactions?.sad?.length || 0)}
                 </span>
               </button>
@@ -589,19 +618,19 @@ function CommentThread({
               {!comment.parentId && (
                 <button
                   onClick={() => onReply(comment.id)}
-                  className="text-sm font-semibold text-gray-500 hover:text-blue-600 transition-colors"
+                  className="text-xs font-semibold text-gray-500 hover:text-blue-600 transition-colors"
                 >
                   Reply
                 </button>
               )}
             </div>
 
-            {/* Reply Input */}
+            {/* Reply Input - More responsive */}
             {replyingTo === comment.id && (
-              <div className="mt-4 ml-5">
-                <div className="flex items-start space-x-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-blue-600 font-semibold text-sm">
+              <div className="mt-3 sm:mt-4 ml-3 sm:ml-4 lg:ml-5">
+                <div className="flex items-start space-x-2 sm:space-x-3">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-blue-600 font-semibold text-xs sm:text-sm">
                       {currentUser?.email?.charAt(0).toUpperCase()}
                     </span>
                   </div>
@@ -611,7 +640,7 @@ function CommentThread({
                         value={replyText}
                         onChange={(e) => setReplyText(e.target.value)}
                         placeholder="Write a reply..."
-                        className="w-full px-4 py-3 bg-gray-50 border-0 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white resize-none text-gray-900"
+                        className="w-full px-3 sm:px-4 py-2 sm:py-3 bg-gray-50 border-0 rounded-xl sm:rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white resize-none text-gray-900 text-sm sm:text-base"
                         rows={2}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && !e.shiftKey) {
@@ -624,17 +653,17 @@ function CommentThread({
                         }}
                         autoFocus
                       />
-                      <div className="flex justify-end space-x-3 mt-3">
+                      <div className="flex justify-end space-x-2 sm:space-x-3 mt-2 sm:mt-3">
                         <button
                           onClick={onCancelReply}
-                          className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 font-medium"
+                          className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm text-gray-500 hover:text-gray-700 font-medium"
                         >
                           Cancel
                         </button>
                         <button
                           onClick={() => onSubmitReply(comment.id)}
                           disabled={!replyText.trim()}
-                          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                          className="px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white text-xs sm:text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                         >
                           Reply
                         </button>
@@ -645,20 +674,20 @@ function CommentThread({
               </div>
             )}
 
-            {/* Replies */}
+            {/* Replies - More responsive */}
             {comment.replies && comment.replies.length > 0 && (
-              <div className="mt-4 ml-5 pl-4 border-l-2 border-gray-100 space-y-4">
+              <div className="mt-3 sm:mt-4 ml-3 sm:ml-4 lg:ml-5 pl-3 sm:pl-4 border-l-2 border-gray-100 space-y-3 sm:space-y-4">
                 {comment.replies.map((reply) => (
-                  <div key={reply.id} className="bg-gray-50 rounded-2xl p-4">
-                    <div className="flex items-start space-x-3">
-                      <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
-                        <span className="text-gray-600 font-semibold text-sm">
+                  <div key={reply.id} className="bg-gray-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
+                    <div className="flex items-start space-x-2 sm:space-x-3">
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-gray-600 font-semibold text-xs sm:text-sm">
                           {reply.username.charAt(0).toUpperCase()}
                         </span>
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center space-x-2 mb-1">
-                          <h5 className="font-semibold text-gray-900 text-sm">
+                          <h5 className="font-semibold text-gray-900 text-xs sm:text-sm">
                             {reply.username}
                           </h5>
                           <span className="text-xs text-gray-500">
@@ -667,14 +696,14 @@ function CommentThread({
                             )}
                           </span>
                         </div>
-                        <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                        <p className="text-gray-700 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap">
                           {reply.text}
                         </p>
-                        <div className="flex items-center space-x-4 mt-2">
-                          {/* Happy Face for Reply */}
+                        <div className="flex items-center space-x-3 sm:space-x-4 mt-1 sm:mt-2">
+                          {/* Happy Face for Reply - More responsive */}
                           <button
                             onClick={() => onReaction(reply.id, 'like')}
-                            className={`flex items-center space-x-1 px-2 py-1 rounded-lg transition-all duration-200 ${
+                            className={`flex items-center space-x-1 px-1.5 sm:px-2 py-1 rounded-lg transition-all duration-200 ${
                               (reply.reactions?.like?.includes(currentUser?.uid)) 
                                 ? 'bg-green-50 hover:bg-green-100' 
                                 : 'hover:bg-green-50'
@@ -688,10 +717,10 @@ function CommentThread({
                             </span>
                           </button>
 
-                          {/* Frown Face for Reply */}
+                          {/* Frown Face for Reply - More responsive */}
                           <button
                             onClick={() => onReaction(reply.id, 'sad')}
-                            className={`flex items-center space-x-1 px-2 py-1 rounded-lg transition-all duration-200 ${
+                            className={`flex items-center space-x-1 px-1.5 sm:px-2 py-1 rounded-lg transition-all duration-200 ${
                               (reply.reactions?.sad?.includes(currentUser?.uid)) 
                                 ? 'bg-red-50 hover:bg-red-100' 
                                 : 'hover:bg-red-50'

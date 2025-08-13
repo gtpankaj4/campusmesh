@@ -134,17 +134,17 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
   if (!user) return null;
 
   return (
-    <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl w-full max-w-md h-[600px] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b">
-          <h3 className="font-semibold text-gray-900">Comments</h3>
+    <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-3 z-50">
+      <div className="bg-white rounded-xl w-full max-w-md h-[90vh] sm:h-[600px] flex flex-col">
+        {/* Header - Reddit-like */}
+        <div className="flex items-center justify-between p-3 border-b">
+          <h3 className="font-semibold text-gray-900 text-base">Comments</h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 p-1"
           >
             <svg
-              className="h-6 w-6"
+              className="h-5 w-5"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -159,20 +159,20 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
           </button>
         </div>
 
-        {/* Comments */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Comments - Reddit-like */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
           {comments.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-500">
+            <div className="text-center py-6">
+              <p className="text-gray-500 text-sm">
                 No comments yet. Be the first to comment!
               </p>
             </div>
           ) : (
             comments.map((comment) => (
-              <div key={comment.id} className="border-b border-gray-100 pb-3">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-medium text-sm text-gray-900">
+              <div key={comment.id} className="border-b border-gray-100 pb-2">
+                <div className="flex items-start justify-between mb-1">
+                  <div className="flex items-center space-x-1">
+                    <span className="font-medium text-xs text-gray-900">
                       {comment.username}
                     </span>
                     <RepBadge score={comment.userRep} size="sm" />
@@ -186,27 +186,27 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
                       : "Just now"}
                   </span>
                 </div>
-                <p className="text-sm text-gray-700">{comment.text}</p>
+                <p className="text-xs text-gray-700 leading-relaxed">{comment.text}</p>
               </div>
             ))
           )}
         </div>
 
-        {/* Comment Input */}
-        <form onSubmit={addComment} className="p-4 border-t">
+        {/* Comment Input - Reddit-like */}
+        <form onSubmit={addComment} className="p-3 border-t">
           <div className="flex space-x-2">
             <input
               type="text"
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
               placeholder="Add a comment..."
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-500"
+              className="flex-1 px-2 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-500 text-sm"
               disabled={loading}
             />
             <button
               type="submit"
               disabled={loading || !newComment.trim()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <PaperAirplaneIcon className="h-4 w-4" />
             </button>

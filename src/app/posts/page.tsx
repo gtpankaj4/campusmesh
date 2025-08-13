@@ -2029,32 +2029,32 @@ export default function CommunitiesPage() {
         />
       )}
 
-      {/* Image Upload Modal */}
+      {/* Image Upload Modal - More responsive */}
       {showImageUpload && selectedCommunity && (
-        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Change Community Picture</h3>
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-6">
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Change Community Picture</h3>
               <button
                 onClick={() => setShowImageUpload(false)}
                 className="text-gray-400 hover:text-gray-600"
               >
-                <XMarkIcon className="h-6 w-6" />
+                <XMarkIcon className="h-5 w-5 sm:h-6 sm:w-6" />
               </button>
             </div>
             
-            <div className="space-y-4">
-              <div className="text-sm text-gray-600">
+            <div className="space-y-3 sm:space-y-4">
+              <div className="text-xs sm:text-sm text-gray-600">
                 Select a new image for {selectedCommunity.name}. The image will be automatically compressed and optimized.
               </div>
               
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 sm:p-6 text-center hover:border-blue-400 transition-colors">
                 <div className="space-y-2">
-                  <svg className="h-12 w-12 text-gray-400 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-10 w-10 sm:h-12 sm:w-12 text-gray-400 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-xs sm:text-sm text-gray-600">
                     <label htmlFor="community-image" className="cursor-pointer text-blue-600 hover:text-blue-700 font-medium">
                       Click to upload
                     </label>
@@ -2095,14 +2095,14 @@ export default function CommunitiesPage() {
               {imageUploading && (
                 <div className="flex items-center justify-center space-x-2 text-blue-600">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  <span className="text-sm">Uploading and compressing image...</span>
+                  <span className="text-xs sm:text-sm">Uploading and compressing image...</span>
                 </div>
               )}
               
-              <div className="flex items-center justify-end space-x-3 pt-4 border-t">
+              <div className="flex items-center justify-end space-x-2 sm:space-x-3 pt-3 sm:pt-4 border-t">
                 <button
                   onClick={() => setShowImageUpload(false)}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900 transition-colors"
+                  className="px-3 sm:px-4 py-2 text-gray-700 hover:text-gray-900 transition-colors text-sm sm:text-base"
                   disabled={imageUploading}
                 >
                   Cancel
@@ -2113,13 +2113,13 @@ export default function CommunitiesPage() {
         </div>
       )}
 
-      {/* Join Questions Modal */}
+      {/* Join Questions Modal - More responsive */}
       {showJoinModal && joiningCommunityData && (
-        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50">
           <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl">
+            <div className="sticky top-0 bg-white border-b px-4 sm:px-6 py-3 sm:py-4 rounded-t-xl">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">Join {joiningCommunityData.name}</h2>
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Join {joiningCommunityData.name}</h2>
                 <button
                   onClick={() => {
                     setShowJoinModal(false);
@@ -2129,22 +2129,22 @@ export default function CommunitiesPage() {
                   }}
                   className="text-gray-500 hover:text-gray-700"
                 >
-                  <XMarkIcon className="h-6 w-6" />
+                  <XMarkIcon className="h-5 w-5 sm:h-6 sm:w-6" />
                 </button>
               </div>
             </div>
             
-            <div className="p-6">
-              <div className="mb-6">
-                <p className="text-gray-600">
+            <div className="p-4 sm:p-6">
+              <div className="mb-4 sm:mb-6">
+                <p className="text-gray-600 text-sm sm:text-base">
                   Please answer the following questions to join this private mesh. Your answers will be reviewed by the moderators.
                 </p>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {joiningCommunityData.enrollmentQuestions?.map((question: any, index: number) => (
                   <div key={question.id || index}>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1 sm:mb-2">
                       {question.question}
                       {question.required && <span className="text-red-500 ml-1">*</span>}
                     </label>
@@ -2152,7 +2152,7 @@ export default function CommunitiesPage() {
                       rows={3}
                       value={joinAnswers[question.question] || ''}
                       onChange={(e) => setJoinAnswers({ ...joinAnswers, [question.question]: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900"
+                      className="w-full px-2 sm:px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900 text-sm sm:text-base"
                       placeholder={`Enter your answer${question.required ? ' (required)' : ' (optional)'}`}
                       required={question.required}
                     />
@@ -2160,14 +2160,14 @@ export default function CommunitiesPage() {
                 ))}
               </div>
 
-              <div className="flex items-center justify-end space-x-3 pt-6 border-t mt-6">
+              <div className="flex items-center justify-end space-x-2 sm:space-x-3 pt-4 sm:pt-6 border-t mt-4 sm:mt-6">
                 <button
                   onClick={() => {
                     setShowJoinModal(false);
                     setJoiningCommunityData(null);
                     setJoinAnswers({});
                   }}
-                  className="px-4 py-2 text-gray-700 hover:text-gray-900 transition-colors"
+                  className="px-3 sm:px-4 py-2 text-gray-700 hover:text-gray-900 transition-colors text-sm sm:text-base"
                 >
                   Cancel
                 </button>
@@ -2192,7 +2192,7 @@ export default function CommunitiesPage() {
                     submitJoinRequest(joiningCommunityData.id, joiningCommunityData.name, joiningCommunityData, answers);
                   }}
                   disabled={joiningCommunity === joiningCommunityData.id}
-                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 sm:px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
                 >
                   {joiningCommunity === joiningCommunityData.id ? 'Submitting...' : 'Submit Request'}
                 </button>
@@ -2272,26 +2272,26 @@ function PostModal({ post, onClose }: PostModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50">
       <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h3 className="font-semibold text-gray-900">Post Details</h3>
+        {/* Header - More responsive */}
+        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-200">
+          <h3 className="font-semibold text-gray-900 text-base sm:text-lg">Post Details</h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 p-1"
           >
-            <XMarkIcon className="h-6 w-6" />
+            <XMarkIcon className="h-5 w-5 sm:h-6 sm:w-6" />
           </button>
         </div>
 
-        {/* Post Content */}
+        {/* Post Content - More responsive */}
         <div className="flex-1 overflow-y-auto">
-          <div className="p-6">
-            {/* Post Header */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center space-x-2">
-                <span className="font-medium text-gray-900">
+          <div className="p-4 sm:p-6">
+            {/* Post Header - More responsive */}
+            <div className="flex items-start justify-between mb-3 sm:mb-4">
+              <div className="flex items-center space-x-1 sm:space-x-2 flex-1 min-w-0">
+                <span className="font-medium text-gray-900 text-sm sm:text-base truncate">
                   {post.userEmail?.split('@')[0] || 'Anonymous'}
                 </span>
                 <RepBadge score={0} size="sm" />
@@ -2301,7 +2301,7 @@ function PostModal({ post, onClose }: PostModalProps) {
                   </span>
                 )}
               </div>
-              <span className="text-sm text-gray-500">
+              <span className="text-xs sm:text-sm text-gray-500 ml-2 flex-shrink-0">
                 {post.createdAt?.toDate ? 
                   dayjs(post.createdAt.toDate()).fromNow() :
                   'Just now'
@@ -2309,34 +2309,34 @@ function PostModal({ post, onClose }: PostModalProps) {
               </span>
             </div>
 
-            {/* Post Title and Content */}
-            <h1 className="text-2xl font-bold text-gray-900 mb-4">{post.title}</h1>
-            <div className="text-gray-700 whitespace-pre-wrap mb-6">{post.description}</div>
+            {/* Post Title and Content - More responsive */}
+            <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 mb-3 sm:mb-4 leading-tight">{post.title}</h1>
+            <div className="text-gray-700 whitespace-pre-wrap mb-4 sm:mb-6 text-sm sm:text-base leading-relaxed">{post.description}</div>
 
-            {/* Post Actions */}
-            <div className="flex items-center space-x-4 pb-4 border-b border-gray-200">
+            {/* Post Actions - More responsive */}
+            <div className="flex items-center space-x-3 sm:space-x-4 pb-3 sm:pb-4 border-b border-gray-200">
               <button
                 onClick={() => setShowCommentInput(!showCommentInput)}
-                className="flex items-center text-gray-600 hover:text-blue-600 transition-colors"
+                className="flex items-center text-gray-600 hover:text-blue-600 transition-colors text-sm sm:text-base"
               >
                 <ChatBubbleLeftIcon className="h-4 w-4 mr-1" />
                 Chat
               </button>
-              <span className="text-gray-500 text-sm">
+              <span className="text-gray-500 text-xs sm:text-sm">
                 {comments.length} {comments.length === 1 ? 'comment' : 'comments'}
               </span>
             </div>
 
-            {/* Comment Input - Facebook Style */}
+            {/* Comment Input - More responsive */}
             {showCommentInput && (
-              <form onSubmit={addComment} className="mt-4 mb-6">
-                <div className="flex space-x-3">
+              <form onSubmit={addComment} className="mt-3 sm:mt-4 mb-4 sm:mb-6">
+                <div className="flex space-x-2 sm:space-x-3">
                   <div className="flex-1">
                     <textarea
                       value={newComment}
                       onChange={(e) => setNewComment(e.target.value)}
                       placeholder="Write a comment..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900"
+                      className="w-full px-2 sm:px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900 text-sm sm:text-base"
                       rows={2}
                       autoFocus
                     />
@@ -2344,7 +2344,7 @@ function PostModal({ post, onClose }: PostModalProps) {
                   <button
                     type="submit"
                     disabled={loading || !newComment.trim()}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                   >
                     <PaperAirplaneIcon className="h-4 w-4" />
                   </button>
@@ -2352,18 +2352,18 @@ function PostModal({ post, onClose }: PostModalProps) {
               </form>
             )}
 
-            {/* Comments */}
-            <div className="space-y-4">
+            {/* Comments - More responsive */}
+            <div className="space-y-3 sm:space-y-4">
               {comments.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-gray-500">No comments yet. Be the first to comment!</p>
+                <div className="text-center py-6 sm:py-8">
+                  <p className="text-gray-500 text-sm sm:text-base">No comments yet. Be the first to comment!</p>
                 </div>
               ) : (
                 comments.map((comment) => (
-                  <div key={comment.id} className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium text-sm text-gray-900">{comment.username}</span>
+                  <div key={comment.id} className="bg-gray-50 rounded-lg p-3 sm:p-4">
+                    <div className="flex items-start justify-between mb-1 sm:mb-2">
+                      <div className="flex items-center space-x-1 sm:space-x-2">
+                        <span className="font-medium text-xs sm:text-sm text-gray-900">{comment.username}</span>
                         <RepBadge score={comment.userRep || 0} size="sm" />
                       </div>
                       <span className="text-xs text-gray-400">
@@ -2373,7 +2373,7 @@ function PostModal({ post, onClose }: PostModalProps) {
                         }
                       </span>
                     </div>
-                    <p className="text-sm text-gray-700">{comment.text}</p>
+                    <p className="text-xs sm:text-sm text-gray-700 leading-relaxed">{comment.text}</p>
                   </div>
                 ))
               )}

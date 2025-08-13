@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { collection, doc, getDoc, getDocs, addDoc, query, where, orderBy, onSnapshot, updateDoc, increment, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db, realtimeDb } from "@/lib/firebase";
@@ -80,7 +80,17 @@ export default function CommunityPage() {
   });
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const communityId = params.communityId as string;
+
+  const handleBackClick = () => {
+    const returnTo = searchParams.get('returnTo');
+    if (returnTo) {
+      router.push(returnTo);
+    } else {
+      router.push('/community');
+    }
+  };
 
   // Use scroll lock for modals
   useModalScrollLock(showEnrollmentForm, showCreatePostModal);
@@ -627,7 +637,7 @@ export default function CommunityPage() {
         <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <button
-              onClick={() => router.push('/community')}
+              onClick={handleBackClick}
               className="flex items-center text-gray-600 hover:text-gray-900"
             >
               <ArrowLeftIcon className="h-5 w-5 mr-2" />

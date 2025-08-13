@@ -1639,7 +1639,8 @@ export default function DashboardPage() {
                                       className="px-2 py-0.5 bg-stone-100 text-stone-700 rounded-md text-xs hover:bg-stone-200 cursor-pointer transition-colors truncate"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        router.push(`/community/${post.communityId || ''}`);
+                                        // Store current page as return path
+                                        router.push(`/community/${post.communityId || ''}?returnTo=${encodeURIComponent('/dashboard')}`);
                                       }}
                                       title={post.communityName}
                                     >
