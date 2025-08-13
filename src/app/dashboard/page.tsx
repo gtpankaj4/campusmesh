@@ -1189,7 +1189,8 @@ export default function DashboardPage() {
                   return (
                     <div 
                       key={post.id} 
-                      className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 flex flex-col h-full group"
+                      onClick={() => router.push(`/post/${post.id}`)}
+                      className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 flex flex-col h-full group cursor-pointer"
                     >
                       {/* Header with breadcrumb style */}
                       <div className="p-4 pb-2">

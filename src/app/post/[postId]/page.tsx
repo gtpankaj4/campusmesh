@@ -2,13 +2,33 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { doc, getDoc, collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
-import { ChatBubbleLeftIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
-import RepBadge from "@/components/RepBadge";
-import Comment from "@/components/Comment";
+import {
+  doc,
+  getDoc,
+  collection,
+  addDoc,
+  query,
+  orderBy,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc,
+  increment,
+} from "firebase/firestore";
+import {
+  ArrowLeftIcon,
+  HeartIcon,
+  FaceSmileIcon,
+  FaceFrownIcon,
+  ChatBubbleLeftIcon,
+  PaperAirplaneIcon,
+  EllipsisHorizontalIcon,
+} from "@heroicons/react/24/outline";
+import { HeartIcon as HeartSolid } from "@heroicons/react/24/solid";
 import Navbar from "@/components/Navbar";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import PostInteractions from "@/components/PostInteractions";
 
 interface Post {
   id: string;
@@ -16,110 +36,275 @@ interface Post {
   description: string;
   userId: string;
   userEmail: string;
-  createdAt: any;
   communityId?: string;
   communityName?: string;
-  submessId?: string;
   submessName?: string;
+  createdAt: any;
+  likesCount?: number;
+  commentsCount?: number;
 }
 
-interface PostComment {
+interface Comment {
   id: string;
   text: string;
   userId: string;
   userEmail: string;
   username: string;
-  timestamp: any;
-  userRep: number;
+  postId: string;
+  parentId?: string;
+  createdAt: any;
+  likesCount: number;
+  reactions: { [key: string]: string[] };
+  replies?: Comment[];
 }
 
+interface Reaction {
+  type: "like" | "love" | "laugh" | "sad" | "angry";
+  emoji: string;
+  color: string;
+}
+
+const reactions: Reaction[] = [
+  { type: "like", emoji: "👍", color: "text-blue-500" },
+  { type: "love", emoji: "❤️", color: "text-red-500" },
+  { type: "laugh", emoji: "😂", color: "text-yellow-500" },
+  { type: "sad", emoji: "😢", color: "text-blue-400" },
+  { type: "angry", emoji: "😠", color: "text-red-600" },
+];
+
 export default function PostPage() {
-  const params = useParams();
-  const router = useRouter();
   const [user] = useAuthState(auth);
   const [post, setPost] = useState<Post | null>(null);
-  const [comments, setComments] = useState<PostComment[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [newComment, setNewComment] = useState("");
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [showReactions, setShowReactions] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
-  const [showCommentModal, setShowCommentModal] = useState(false);
-  
+
+  const params = useParams();
+  const router = useRouter();
   const postId = params.postId as string;
 
   useEffect(() => {
-    if (!postId) return;
-
-    const loadPost = async () => {
-      try {
-        const postRef = doc(db, 'posts', postId);
-        const postSnap = await getDoc(postRef);
-        
-        if (postSnap.exists()) {
-          setPost({ id: postSnap.id, ...postSnap.data() } as Post);
-        } else {
-          console.error('Post not found');
-          router.push('/dashboard');
-        }
-      } catch (error) {
-        console.error('Error loading post:', error);
-        router.push('/dashboard');
-      } finally {
-        setLoading(false);
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+    loadPost();
+    loadUserProfile();
+    const unsubscribe = loadComments();
+    
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
       }
     };
+  }, [user, postId]);
 
-    loadPost();
-  }, [postId, router]);
+  const loadPost = async () => {
+    try {
+      const postRef = doc(db, "posts", postId);
+      const postSnap = await getDoc(postRef);
 
-  useEffect(() => {
-    if (!postId) return;
+      if (postSnap.exists()) {
+        setPost({ id: postSnap.id, ...postSnap.data() } as Post);
+      } else {
+        router.push("/dashboard");
+      }
+    } catch (error) {
+      console.error("Error loading post:", error);
+      router.push("/dashboard");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    // Load comments in real-time
-    const commentsRef = collection(db, 'posts', postId, 'comments');
-    const q = query(commentsRef, orderBy('timestamp', 'desc'));
+  const loadUserProfile = async () => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        setUserProfile(userSnap.data());
+      }
+    } catch (error) {
+      console.error("Error loading user profile:", error);
+    }
+  };
+
+  const loadComments = () => {
+    const commentsRef = collection(db, "posts", postId, "comments");
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const postComments: PostComment[] = snapshot.docs.map(doc => ({
+    // Try without orderBy first to see if that's the issue
+    const unsubscribe = onSnapshot(commentsRef, (snapshot) => {
+      const commentsData = snapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
-      })) as PostComment[];
-      setComments(postComments);
+        ...doc.data(),
+      })) as Comment[];
+
+      console.log('📝 Raw comments data:', commentsData);
+
+      // Sort manually by createdAt
+      commentsData.sort((a, b) => {
+        const aTime = a.createdAt?.toDate?.()?.getTime() || 0;
+        const bTime = b.createdAt?.toDate?.()?.getTime() || 0;
+        return aTime - bTime;
+      });
+
+      // Organize comments into threads
+      const organizedComments = organizeComments(commentsData);
+      console.log('📝 Organized comments:', organizedComments);
+      setComments(organizedComments);
+    }, (error) => {
+      console.error('❌ Error loading comments:', error);
     });
 
     return unsubscribe;
-  }, [postId]);
+  };
 
-  useEffect(() => {
-    if (user) {
-      const loadUserProfile = async () => {
-        try {
-          const userRef = doc(db, 'users', user.uid);
-          const userSnap = await getDoc(userRef);
-          if (userSnap.exists()) {
-            setUserProfile(userSnap.data());
-          }
-        } catch (error) {
-          console.error('Error loading user profile:', error);
+  const organizeComments = (commentsData: Comment[]): Comment[] => {
+    console.log('🔧 Organizing comments:', commentsData.length, 'comments');
+    
+    const commentMap = new Map<string, Comment>();
+    const rootComments: Comment[] = [];
+
+    // First pass: create map of all comments
+    commentsData.forEach((comment) => {
+      console.log('📝 Processing comment:', comment.id, comment.text, 'parentId:', comment.parentId);
+      commentMap.set(comment.id, { ...comment, replies: [] });
+    });
+
+    // Second pass: organize into threads
+    commentsData.forEach((comment) => {
+      if (comment.parentId) {
+        const parent = commentMap.get(comment.parentId);
+        if (parent) {
+          parent.replies!.push(commentMap.get(comment.id)!);
+          console.log('📝 Added reply to parent:', comment.parentId);
+        } else {
+          console.log('❌ Parent not found for comment:', comment.id, 'parentId:', comment.parentId);
         }
-      };
-      loadUserProfile();
+      } else {
+        rootComments.push(commentMap.get(comment.id)!);
+        console.log('📝 Added root comment:', comment.id);
+      }
+    });
+
+    console.log('📝 Final root comments:', rootComments.length);
+    return rootComments;
+  };
+
+  const addComment = async () => {
+    if (!user || !newComment.trim()) return;
+
+    try {
+      const commentsRef = collection(db, "posts", postId, "comments");
+      await addDoc(commentsRef, {
+        text: newComment.trim(),
+        userId: user.uid,
+        userEmail: user.email,
+        username: userProfile?.username || user.email?.split("@")[0] || "User",
+        postId: postId,
+        createdAt: serverTimestamp(),
+        likesCount: 0,
+        reactions: {},
+      });
+
+      // Update post comment count
+      const postRef = doc(db, "posts", postId);
+      await updateDoc(postRef, {
+        commentsCount: increment(1),
+      });
+
+      setNewComment("");
+    } catch (error) {
+      console.error("Error adding comment:", error);
     }
-  }, [user]);
+  };
+
+  const addReply = async (parentId: string) => {
+    if (!user || !replyText.trim()) return;
+
+    try {
+      const commentsRef = collection(db, "posts", postId, "comments");
+      await addDoc(commentsRef, {
+        text: replyText.trim(),
+        userId: user.uid,
+        userEmail: user.email,
+        username: userProfile?.username || user.email?.split("@")[0] || "User",
+        postId: postId,
+        parentId: parentId,
+        createdAt: serverTimestamp(),
+        likesCount: 0,
+        reactions: {},
+      });
+
+      setReplyText("");
+      setReplyingTo(null);
+    } catch (error) {
+      console.error("Error adding reply:", error);
+    }
+  };
+
+  const addReaction = async (commentId: string, reactionType: string) => {
+    if (!user) return;
+
+    try {
+      const commentRef = doc(db, "posts", postId, "comments", commentId);
+      const commentSnap = await getDoc(commentRef);
+
+      if (commentSnap.exists()) {
+        const commentData = commentSnap.data();
+        const reactions = commentData.reactions || {};
+
+        // Check if user already has this reaction
+        const userHasReaction = reactions[reactionType]?.includes(user.uid);
+
+        if (userHasReaction) {
+          // Remove the reaction (toggle off)
+          reactions[reactionType] = reactions[reactionType].filter(
+            (uid: string) => uid !== user.uid
+          );
+        } else {
+          // Remove user from all other reaction types first
+          Object.keys(reactions).forEach((type) => {
+            reactions[type] = reactions[type].filter(
+              (uid: string) => uid !== user.uid
+            );
+          });
+
+          // Add user to the new reaction type
+          if (!reactions[reactionType]) {
+            reactions[reactionType] = [];
+          }
+          reactions[reactionType].push(user.uid);
+        }
+
+        await updateDoc(commentRef, { reactions });
+      }
+    } catch (error) {
+      console.error("Error adding reaction:", error);
+    }
+  };
 
   const formatTimeAgo = (date: Date): string => {
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    const now = Date.now();
+    const diffInSeconds = Math.floor((now - date.getTime()) / 1000);
 
-    if (diffInSeconds < 60) return 'Just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+    if (diffInSeconds < 60) return "Just now";
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h`;
+    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d`;
+    return `${Math.floor(diffInSeconds / 604800)}w`;
   };
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar userProfile={userProfile} />
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
+        <Navbar />
+        <div className="pt-8 flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
       </div>
@@ -129,18 +314,9 @@ export default function PostPage() {
   if (!post) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navbar userProfile={userProfile} />
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Post not found</h1>
-            <p className="text-gray-600 mb-4">The post you're looking for doesn't exist.</p>
-            <button
-              onClick={() => router.push('/dashboard')}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
-            >
-              Back to Dashboard
-            </button>
-          </div>
+        <Navbar />
+        <div className="pt-8 text-center">
+          <p className="text-gray-500">Post not found</p>
         </div>
       </div>
     );
@@ -148,147 +324,398 @@ export default function PostPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar userProfile={userProfile} />
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 pt-6 sm:pt-8">
-        {/* Back Button */}
-        <button
-          onClick={() => router.back()}
-          className="p-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors hover:bg-gray-100 rounded-lg"
-        >
-          <ArrowLeftIcon className="h-5 w-5" />
-        </button>
+      <Navbar />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Post Content */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-xl shadow-sm border p-8">
-              {/* Post Header */}
-              <div className="flex items-start justify-between mb-6">
-                <div className="flex items-center space-x-3">
-                  <span className="font-medium text-gray-900">
-                    {post.userEmail?.split('@')[0] || 'Anonymous'}
-                  </span>
-                  <RepBadge score={0} size="sm" />
-                  {post.communityName && (
-                    <button
-                      onClick={() => router.push(`/community/${post.communityId}`)}
-                      className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full hover:bg-blue-200 transition-colors"
+      <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6 pt-6 sm:pt-8">
+        {/* Header */}
+        <div className="flex items-center mb-6">
+          <button
+            onClick={() => router.back()}
+            className="p-2 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 mr-4"
+          >
+            <ArrowLeftIcon className="h-5 w-5" />
+          </button>
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">Post</h1>
+            {post.communityName && (
+              <p className="text-sm text-gray-500">{post.communityName}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Post Content - Bigger Version */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 mb-8">
+          <div className="p-8">
+            {/* Post Header - Same style as card but bigger */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center text-sm text-gray-500 space-x-1 flex-1 min-w-0">
+                <button className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer truncate text-lg">
+                  {post.userEmail.split("@")[0]}
+                </button>
+                {post.communityName && (
+                  <>
+                    <span className="shrink-0 text-lg">›</span>
+                    <span
+                      className="px-3 py-1 bg-stone-100 text-stone-700 rounded-md text-sm hover:bg-stone-200 cursor-pointer transition-colors truncate"
+                      title={post.communityName}
                     >
-                      {post.communityName}
-                    </button>
-                  )}
-                  {post.submessName && (
-                    <span className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full">
+                      {post.communityName.length > 15
+                        ? post.communityName.substring(0, 12) + "..."
+                        : post.communityName}
+                    </span>
+                  </>
+                )}
+                {post.submessName && (
+                  <>
+                    <span className="shrink-0 text-lg">›</span>
+                    <span className="px-3 py-1 bg-amber-50 text-amber-700 rounded-md text-sm font-medium truncate">
                       {post.submessName}
                     </span>
-                  )}
-                </div>
-                <span className="text-sm text-gray-500">
-                  {post.createdAt?.toDate ? 
-                    formatTimeAgo(post.createdAt.toDate()) : 
-                    'Just now'
-                  }
-                </span>
-              </div>
-
-              {/* Post Content */}
-              <h1 className="text-3xl font-bold text-gray-900 mb-6">{post.title}</h1>
-              <div className="prose prose-lg max-w-none">
-                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-                  {post.description}
-                </p>
-              </div>
-
-              {/* Post Actions */}
-              <div className="flex items-center space-x-4 mt-8 pt-6 border-t">
-                <button
-                  onClick={() => setShowCommentModal(true)}
-                  className="flex items-center space-x-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                >
-                  <ChatBubbleLeftIcon className="h-5 w-5" />
-                  <span>Comment ({comments.length})</span>
-                </button>
-                
-                <button
-                  onClick={() => {
-                    if (user && post.userId) {
-                      const chatId = [user.uid, post.userId].sort().join('_');
-                      router.push(`/chat/${chatId}`);
-                    }
-                  }}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <ChatBubbleLeftIcon className="h-5 w-5" />
-                  <span>Chat</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Comments Sidebar */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-xl shadow-sm border">
-              <div className="p-6 border-b">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Comments ({comments.length})
-                </h3>
-              </div>
-              
-              <div className="max-h-96 overflow-y-auto">
-                {comments.length === 0 ? (
-                  <div className="p-6 text-center">
-                    <p className="text-gray-500">No comments yet.</p>
-                    <p className="text-gray-400 text-sm mt-1">Be the first to comment!</p>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-gray-100">
-                    {comments.map((comment) => (
-                      <div key={comment.id} className="p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium text-sm text-gray-900">
-                              {comment.username}
-                            </span>
-                            <RepBadge score={comment.userRep} size="sm" />
-                          </div>
-                          <span className="text-xs text-gray-400">
-                            {comment.timestamp?.toDate ? 
-                              formatTimeAgo(comment.timestamp.toDate()) :
-                              'Just now'
-                            }
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-700">{comment.text}</p>
-                      </div>
-                    ))}
-                  </div>
+                  </>
                 )}
               </div>
-              
-              {user && (
-                <div className="p-4 border-t">
-                  <button
-                    onClick={() => setShowCommentModal(true)}
-                    className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                  >
-                    Add Comment
-                  </button>
-                </div>
-              )}
+              <span className="text-sm text-gray-400 shrink-0 ml-4">
+                {formatTimeAgo(post.createdAt?.toDate?.() || new Date())}
+              </span>
+            </div>
+
+            {/* Post Title - Bigger */}
+            <h1 className="font-bold text-gray-900 text-3xl leading-tight mb-6 cursor-pointer hover:text-blue-600 transition-colors">
+              {post.title}
+            </h1>
+
+            {/* Post Content - Bigger */}
+            <div className="mb-8">
+              <div className="text-gray-600 text-lg leading-relaxed">
+                <p className="whitespace-pre-wrap">{post.description}</p>
+              </div>
+            </div>
+
+            {/* Post Interactions - Same style as card */}
+            <div className="border-t border-gray-100">
+              <PostInteractions
+                postId={post.id}
+                postUserId={post.userId}
+                onCommentClick={() => {}}
+                className="mt-0 pt-6 border-t-0"
+              />
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Comment Modal */}
-      {showCommentModal && post && (
-        <Comment
-          postId={post.id}
-          postUserId={post.userId}
-          onClose={() => setShowCommentModal(false)}
-        />
-      )}
+        {/* Comment Input - Facebook Style */}
+        <div className="bg-white rounded-2xl shadow-sm border mb-6">
+          <div className="p-6">
+            <div className="flex items-start space-x-4">
+              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-blue-600 font-semibold">
+                  {user?.email?.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="flex-1">
+                <div className="relative">
+                  <textarea
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder={`Comment as ${
+                      user?.email?.split("@")[0] || "User"
+                    }`}
+                    className="w-full px-4 py-3 bg-gray-50 border-0 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white resize-none text-gray-900"
+                    rows={2}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        addComment();
+                      }
+                    }}
+                  />
+                  {newComment.trim() && (
+                    <button
+                      onClick={addComment}
+                      className="absolute bottom-2 right-2 p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                    >
+                      <PaperAirplaneIcon className="h-5 w-5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Comments Section */}
+        <div className="space-y-4">
+          {console.log('🔍 Rendering comments:', comments.length, comments)}
+          {comments.map((comment) => (
+            <CommentThread
+              key={comment.id}
+              comment={comment}
+              onReply={(commentId) => setReplyingTo(commentId)}
+              onReaction={(commentId, reaction) =>
+                addReaction(commentId, reaction)
+              }
+              replyingTo={replyingTo}
+              replyText={replyText}
+              setReplyText={setReplyText}
+              onSubmitReply={addReply}
+              onCancelReply={() => {
+                setReplyingTo(null);
+                setReplyText("");
+              }}
+              currentUser={user}
+              formatTimeAgo={formatTimeAgo}
+              reactions={reactions}
+            />
+          ))}
+
+          {comments.length === 0 && (
+            <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
+              <ChatBubbleLeftIcon className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                No comments yet
+              </h3>
+              <p className="text-gray-500">
+                Be the first to share your thoughts!
+              </p>
+              <p className="text-xs text-gray-400 mt-2">Debug: {comments.length} comments loaded</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Comment Thread Component
+interface CommentThreadProps {
+  comment: Comment;
+  onReply: (commentId: string) => void;
+  onReaction: (commentId: string, reaction: string) => void;
+  replyingTo: string | null;
+  replyText: string;
+  setReplyText: (text: string) => void;
+  onSubmitReply: (parentId: string) => void;
+  onCancelReply: () => void;
+  currentUser: any;
+  formatTimeAgo: (date: Date) => string;
+  reactions: Reaction[];
+}
+
+function CommentThread({
+  comment,
+  onReply,
+  onReaction,
+  replyingTo,
+  replyText,
+  setReplyText,
+  onSubmitReply,
+  onCancelReply,
+  currentUser,
+  formatTimeAgo,
+  reactions,
+}: CommentThreadProps) {
+  const hasUserReacted = (reactionType: string) => {
+    return (
+      comment.reactions?.[reactionType]?.includes(currentUser?.uid) || false
+    );
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border mb-4">
+      <div className="p-6">
+        {/* Main Comment */}
+        <div className="flex items-start space-x-4">
+          <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+            <span className="text-gray-600 font-semibold">
+              {comment.username.charAt(0).toUpperCase()}
+            </span>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="bg-gray-50 rounded-2xl px-5 py-4 relative">
+              <div className="flex items-center space-x-2 mb-2">
+                <h4 className="font-semibold text-gray-900 text-base">
+                  {comment.username}
+                </h4>
+              </div>
+              <p className="text-gray-700 text-base leading-relaxed whitespace-pre-wrap">
+                {comment.text}
+              </p>
+
+
+            </div>
+
+            {/* Comment Actions */}
+            <div className="flex items-center space-x-6 mt-3 ml-5">
+              <span className="text-sm text-gray-500">
+                {formatTimeAgo(comment.createdAt?.toDate?.() || new Date())}
+              </span>
+              
+              {/* Happy Face */}
+              <button
+                onClick={() => onReaction(comment.id, 'like')}
+                className={`flex items-center space-x-1 px-2 py-2 rounded-lg transition-all duration-200 ${
+                  hasUserReacted('like') 
+                    ? 'bg-green-50 hover:bg-green-100' 
+                    : 'hover:bg-green-50'
+                }`}
+              >
+                <FaceSmileIcon className={`h-4 w-4 ${
+                  hasUserReacted('like') ? 'text-green-600' : 'text-gray-400'
+                }`} />
+                <span className="text-sm font-medium text-gray-600">
+                  {(comment.reactions?.like?.length || 0)}
+                </span>
+              </button>
+
+              {/* Frown Face */}
+              <button
+                onClick={() => onReaction(comment.id, 'sad')}
+                className={`flex items-center space-x-1 px-2 py-2 rounded-lg transition-all duration-200 ${
+                  hasUserReacted('sad') 
+                    ? 'bg-red-50 hover:bg-red-100' 
+                    : 'hover:bg-red-50'
+                }`}
+              >
+                <FaceFrownIcon className={`h-4 w-4 ${
+                  hasUserReacted('sad') ? 'text-red-600' : 'text-gray-400'
+                }`} />
+                <span className="text-sm font-medium text-gray-600">
+                  {(comment.reactions?.sad?.length || 0)}
+                </span>
+              </button>
+
+              {/* Only show Reply for root comments (no parentId) */}
+              {!comment.parentId && (
+                <button
+                  onClick={() => onReply(comment.id)}
+                  className="text-sm font-semibold text-gray-500 hover:text-blue-600 transition-colors"
+                >
+                  Reply
+                </button>
+              )}
+            </div>
+
+            {/* Reply Input */}
+            {replyingTo === comment.id && (
+              <div className="mt-4 ml-5">
+                <div className="flex items-start space-x-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-blue-600 font-semibold text-sm">
+                      {currentUser?.email?.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="relative">
+                      <textarea
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        placeholder="Write a reply..."
+                        className="w-full px-4 py-3 bg-gray-50 border-0 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white resize-none text-gray-900"
+                        rows={2}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            onSubmitReply(comment.id);
+                          }
+                          if (e.key === "Escape") {
+                            onCancelReply();
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <div className="flex justify-end space-x-3 mt-3">
+                        <button
+                          onClick={onCancelReply}
+                          className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 font-medium"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => onSubmitReply(comment.id)}
+                          disabled={!replyText.trim()}
+                          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                        >
+                          Reply
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Replies */}
+            {comment.replies && comment.replies.length > 0 && (
+              <div className="mt-4 ml-5 pl-4 border-l-2 border-gray-100 space-y-4">
+                {comment.replies.map((reply) => (
+                  <div key={reply.id} className="bg-gray-50 rounded-2xl p-4">
+                    <div className="flex items-start space-x-3">
+                      <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-gray-600 font-semibold text-sm">
+                          {reply.username.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <h5 className="font-semibold text-gray-900 text-sm">
+                            {reply.username}
+                          </h5>
+                          <span className="text-xs text-gray-500">
+                            {formatTimeAgo(
+                              reply.createdAt?.toDate?.() || new Date()
+                            )}
+                          </span>
+                        </div>
+                        <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                          {reply.text}
+                        </p>
+                        <div className="flex items-center space-x-4 mt-2">
+                          {/* Happy Face for Reply */}
+                          <button
+                            onClick={() => onReaction(reply.id, 'like')}
+                            className={`flex items-center space-x-1 px-2 py-1 rounded-lg transition-all duration-200 ${
+                              (reply.reactions?.like?.includes(currentUser?.uid)) 
+                                ? 'bg-green-50 hover:bg-green-100' 
+                                : 'hover:bg-green-50'
+                            }`}
+                          >
+                            <FaceSmileIcon className={`h-3 w-3 ${
+                              (reply.reactions?.like?.includes(currentUser?.uid)) ? 'text-green-600' : 'text-gray-400'
+                            }`} />
+                            <span className="text-xs font-medium text-gray-600">
+                              {(reply.reactions?.like?.length || 0)}
+                            </span>
+                          </button>
+
+                          {/* Frown Face for Reply */}
+                          <button
+                            onClick={() => onReaction(reply.id, 'sad')}
+                            className={`flex items-center space-x-1 px-2 py-1 rounded-lg transition-all duration-200 ${
+                              (reply.reactions?.sad?.includes(currentUser?.uid)) 
+                                ? 'bg-red-50 hover:bg-red-100' 
+                                : 'hover:bg-red-50'
+                            }`}
+                          >
+                            <FaceFrownIcon className={`h-3 w-3 ${
+                              (reply.reactions?.sad?.includes(currentUser?.uid)) ? 'text-red-600' : 'text-gray-400'
+                            }`} />
+                            <span className="text-xs font-medium text-gray-600">
+                              {(reply.reactions?.sad?.length || 0)}
+                            </span>
+                          </button>
+                          
+                          {/* No Reply button for replies - only one level deep */}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
