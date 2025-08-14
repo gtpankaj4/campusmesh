@@ -34,6 +34,8 @@ interface UserPost {
   description: string;
   type: string;
   userId?: string;
+  isAnonymous?: boolean;
+  communityId?: string;
   createdAt: any;
   communityName?: string;
   submessName?: string;
@@ -58,6 +60,7 @@ export default function UserProfilePage() {
   const [userCommunities, setUserCommunities] = useState<any[]>([]);
   const [actualPostsCount, setActualPostsCount] = useState(0);
   const [actualCommentsCount, setActualCommentsCount] = useState(0);
+  const [currentUserCommunities, setCurrentUserCommunities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'posts' | 'communities'>('posts');
   const router = useRouter();
@@ -70,7 +73,7 @@ export default function UserProfilePage() {
         setCurrentUser(user);
         await loadCurrentUserProfile(user.uid);
         await loadUserProfile();
-        await loadUserPosts();
+        loadUserPosts();
         await loadUserCommunities();
         await loadActualCounts();
       } else {
@@ -81,6 +84,25 @@ export default function UserProfilePage() {
 
     return () => unsubscribe();
   }, [router, userId]);
+
+  // Load current user's communities for mesh membership check
+  useEffect(() => {
+    if (currentUser && currentUser.uid !== userId) {
+      const loadCurrentUserCommunities = async () => {
+        try {
+          const userCommunitiesRef = collection(db, 'users', currentUser.uid, 'communities');
+          const snapshot = await getDocs(userCommunitiesRef);
+          const communityIds = snapshot.docs.map(doc => doc.data().communityId);
+          setCurrentUserCommunities(communityIds);
+        } catch (error) {
+          console.error('Error loading current user communities:', error);
+        }
+      };
+      loadCurrentUserCommunities();
+    }
+  }, [currentUser, userId]);
+
+
 
   const loadCurrentUserProfile = async (currentUserId: string) => {
     try {
@@ -118,24 +140,10 @@ export default function UserProfilePage() {
           ...doc.data()
         })) as UserPost[];
         
-        // Filter posts based on privacy settings and mesh membership
-        const filteredPosts = posts.filter(post => {
-          // If viewing own profile, show all posts
-          if (currentUser?.uid === userId) {
-            return true;
-          }
-          
-          // If user has disabled public post visibility, only show public mesh posts
-          if (!userProfile?.showPostsToPublic) {
-            return post.meshType === 'public';
-          }
-          
-          // Show public posts and posts from common meshes
-          // For now, we'll show public posts only (mesh membership check would require additional queries)
-          return post.meshType === 'public' || !post.meshType;
-        });
+        // Store all posts first, then filter based on user profile when it's available
+        setUserPosts(posts);
         
-        setUserPosts(filteredPosts);
+
       });
 
       return unsubscribe;
@@ -243,6 +251,45 @@ export default function UserProfilePage() {
   }
 
   const isOwnProfile = currentUser?.uid === userId;
+
+
+
+  // Filter posts based on privacy settings and mesh membership
+  const visiblePosts = userPosts.filter(post => {
+    // If viewing own profile, show ALL posts (including anonymous ones)
+    if (isOwnProfile) {
+      return true;
+    }
+    
+    // If userProfile is not loaded yet, don't show any posts to be safe
+    if (!userProfile) {
+      return false;
+    }
+    
+    // If user has DISABLED public post visibility, show NO posts to visitors
+    if (!userProfile.showPostsToPublic) {
+      return false;
+    }
+    
+    // If user has ENABLED public post visibility, apply mesh-based filtering
+    if (userProfile.showPostsToPublic) {
+      // Never show anonymous posts (to protect user identity)
+      if (post.isAnonymous) {
+        return false;
+      }
+      
+      // If post has no community (general post), show it
+      if (!post.communityId) {
+        return true;
+      }
+      
+      // For posts in communities, check if it's a mutual mesh
+      // Show only if both users are in the same mesh
+      return currentUserCommunities.includes(post.communityId);
+    }
+    
+    return false;
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -365,7 +412,7 @@ export default function UserProfilePage() {
                           : 'text-gray-500 hover:text-gray-700'
                       }`}
                     >
-                      Posts ({userPosts.length})
+                      Posts ({visiblePosts.length})
                     </button>
                     <button
                       onClick={() => setActiveTab('communities')}
@@ -383,7 +430,7 @@ export default function UserProfilePage() {
                 {/* Posts Content */}
                 {activeTab === 'posts' && (
                   <div>
-                    {userPosts.length === 0 ? (
+                    {visiblePosts.length === 0 ? (
                       <div className="text-center py-12">
                         <UserIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                         <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -397,7 +444,7 @@ export default function UserProfilePage() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {userPosts.map((post) => (
+                        {visiblePosts.map((post) => (
                           <div 
                             key={post.id} 
                             className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 flex flex-col h-full group cursor-pointer"
