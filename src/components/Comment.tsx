@@ -73,9 +73,9 @@ export default function Comment({ postId, postUserId, onClose }: CommentProps) {
       // Get user profile for username with better fallback
       const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
-      const userData: UserData | null = userSnap.exists() ? { uid: user.uid, ...userSnap.data() } as UserData : null;
+      const userData = userSnap.exists() ? userSnap.data() : null;
 
-      const username = getUserDisplayName(userData, user, user.uid);
+      const username = userData?.username || userData?.displayName || user.email?.split('@')[0] || 'User';
 
       await addDoc(commentsRef, {
         text: newComment.trim(),

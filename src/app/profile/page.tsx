@@ -5,16 +5,19 @@ import { useRouter } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-// No additional icons needed
+import { PencilIcon } from "@heroicons/react/24/outline";
 import RepBadge from "@/components/RepBadge";
 import Navbar from "@/components/Navbar";
 
 interface UserProfile {
+  username?: string;
+  displayName?: string;
   reputation: number;
   postsCount: number;
   commentsCount: number;
   communitiesCount: number;
   joinDate: any;
+  profileSetup?: boolean;
 }
 
 interface UserPost {
@@ -53,7 +56,11 @@ export default function ProfilePage() {
       const userSnap = await getDoc(userRef);
       
       if (userSnap.exists()) {
-        setProfile(userSnap.data() as UserProfile);
+        const userData = userSnap.data() as UserProfile;
+        setProfile(userData);
+        
+        // Only redirect to setup if user is accessing profile directly without username
+        // Don't redirect if they're editing (we'll handle this in the UI)
       } else {
         // Create new user profile
         const newProfile: UserProfile = {
@@ -64,6 +71,7 @@ export default function ProfilePage() {
           joinDate: new Date()
         };
         setProfile(newProfile);
+        // Don't redirect new users automatically
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -116,11 +124,23 @@ export default function ProfilePage() {
                   {user?.email?.charAt(0).toUpperCase()}
                 </span>
               </div>
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">{user?.email}</h2>
+              <div className="flex-1">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {profile?.displayName || profile?.username || user?.email?.split('@')[0] || 'User'}
+                </h2>
+                {profile?.username && (
+                  <p className="text-sm text-gray-600">@{profile.username}</p>
+                )}
                 <p className="text-sm text-gray-500">Member since {profile?.joinDate?.toDate ? 
                   profile.joinDate.toDate().toLocaleDateString() : 'Recently'}</p>
               </div>
+              <button
+                onClick={() => router.push('/profile/setup')}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                title="Edit profile"
+              >
+                <PencilIcon className="h-4 w-4" />
+              </button>
             </div>
             
             <div className="flex justify-center mb-4">
@@ -217,7 +237,21 @@ export default function ProfilePage() {
                       {user?.email?.charAt(0).toUpperCase()}
                     </span>
                   </div>
-                  <h2 className="text-xl font-semibold text-gray-900 mb-2">{user?.email}</h2>
+                  <div className="flex items-center justify-center space-x-2 mb-2">
+                    <h2 className="text-xl font-semibold text-gray-900">
+                      {profile?.displayName || profile?.username || user?.email?.split('@')[0] || 'User'}
+                    </h2>
+                    <button
+                      onClick={() => router.push('/profile/setup')}
+                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                      title="Edit profile"
+                    >
+                      <PencilIcon className="h-3 w-3" />
+                    </button>
+                  </div>
+                  {profile?.username && (
+                    <p className="text-sm text-gray-600 mb-2">@{profile.username}</p>
+                  )}
                   <p className="text-sm text-gray-500 mb-4">Member since {profile?.joinDate?.toDate ? 
                     profile.joinDate.toDate().toLocaleDateString() : 'Recently'}</p>
                   <RepBadge score={profile?.reputation || 0} size="lg" />

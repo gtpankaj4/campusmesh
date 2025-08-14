@@ -36,8 +36,10 @@ interface Post {
   description: string;
   userId: string;
   userEmail: string;
+  username?: string;
   communityId?: string;
   communityName?: string;
+  communityUsername?: string;
   submessName?: string;
   createdAt: any;
   likesCount?: number;
@@ -360,7 +362,7 @@ export default function PostPage() {
             <div className="flex items-center justify-between mb-4 sm:mb-6">
               <div className="flex items-center text-xs sm:text-sm text-gray-500 space-x-1 flex-1 min-w-0 lg:min-w-max lg:max-w-none">
                 <button className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer text-sm sm:text-base truncate sm:truncate lg:whitespace-normal lg:overflow-visible">
-                  {post.userEmail.split("@")[0]}
+                  @{post.username || post.userEmail.split("@")[0]}
                 </button>
                 {post.communityName && (
                   <>

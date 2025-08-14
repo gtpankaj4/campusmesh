@@ -18,6 +18,7 @@ import Navbar from "@/components/Navbar";
 interface Community {
   id: string;
   name: string;
+  username: string;
   description: string;
   memberCount: number;
   isPrivate: boolean;
@@ -52,6 +53,7 @@ export default function CommunityPage() {
     []
   );
   const [loading, setLoading] = useState(true);
+  // Remove dialog states - we'll use scrollable boxes instead
   const router = useRouter();
 
   useEffect(() => {
@@ -108,9 +110,16 @@ export default function CommunityPage() {
           const communitySnap = await getDoc(communityRef);
 
           if (communitySnap.exists()) {
+            const communityData = communitySnap.data() as Omit<Community, "id">;
             const community: Community = {
               id: communitySnap.id,
-              ...(communitySnap.data() as Omit<Community, "id">),
+              ...communityData,
+              username:
+                communityData.username ||
+                communityData.name
+                  ?.toLowerCase()
+                  .replace(/[^a-zA-Z0-9]/g, "") ||
+                "mesh",
             };
 
             if (
@@ -155,9 +164,14 @@ export default function CommunityPage() {
       const recommended: Community[] = [];
 
       communitiesSnap.docs.forEach((doc) => {
+        const communityData = doc.data() as Omit<Community, "id">;
         const community: Community = {
           id: doc.id,
-          ...(doc.data() as Omit<Community, "id">),
+          ...communityData,
+          username:
+            communityData.username ||
+            communityData.name?.toLowerCase().replace(/[^a-zA-Z0-9]/g, "") ||
+            "mesh",
         };
 
         allCommunitiesData.push(community);
@@ -188,6 +202,7 @@ export default function CommunityPage() {
     const filtered = allCommunities.filter(
       (community) =>
         community.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        community.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
         community.description.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
@@ -205,20 +220,25 @@ export default function CommunityPage() {
     community: Community;
     showRole?: string;
   }) => (
-    <div className="bg-white rounded-lg border border-gray-200 p-3 lg:p-4 hover:shadow-md hover:border-gray-300 transition-all group">
+    <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 hover:shadow-md hover:border-gray-300 hover:bg-white transition-all group">
       <div className="flex items-start space-x-3">
-        <div className="w-10 h-10 lg:w-12 lg:h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 group-hover:bg-blue-200 transition-colors">
-          <UserGroupIcon className="h-5 w-5 lg:h-6 lg:w-6 text-blue-600" />
+        <div className="w-9 h-9 lg:w-10 lg:h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 group-hover:bg-blue-200 transition-colors">
+          <UserGroupIcon className="h-4 w-4 lg:h-5 lg:w-5 text-blue-600" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between mb-1">
             <div className="flex items-center space-x-2 min-w-0 flex-1">
-              <h3
-                onClick={() => handleCommunityClick(community.id)}
-                className="font-semibold text-gray-900 truncate text-sm lg:text-base group-hover:text-blue-600 transition-colors cursor-pointer"
-              >
-                {community.name}
-              </h3>
+              <div className="flex flex-col min-w-0 flex-1">
+                <h3
+                  onClick={() => handleCommunityClick(community.id)}
+                  className="font-semibold text-gray-900 truncate text-sm group-hover:text-blue-600 transition-colors cursor-pointer"
+                >
+                  {community.name}
+                </h3>
+                <p className="text-xs text-gray-500 truncate">
+                  @{community.username}
+                </p>
+              </div>
               {community.isPrivate && (
                 <ShieldCheckIcon className="h-3 w-3 lg:h-4 lg:w-4 text-gray-400 flex-shrink-0" />
               )}
@@ -231,7 +251,7 @@ export default function CommunityPage() {
           </div>
           <p
             onClick={() => handleCommunityClick(community.id)}
-            className="text-xs lg:text-sm text-gray-600 line-clamp-2 mb-2 leading-relaxed cursor-pointer"
+            className="text-xs text-gray-600 line-clamp-2 mb-2 leading-relaxed cursor-pointer"
           >
             {community.description}
           </p>
@@ -289,7 +309,7 @@ export default function CommunityPage() {
           </div>
           <div className="flex space-x-4 overflow-x-auto pb-4 scrollbar-hide">
             {[...moderatedCommunities, ...joinedCommunities]
-              .slice(0, 8)
+              .slice(0, 12)
               .map((community) => (
                 <div
                   key={community.id}
@@ -392,107 +412,124 @@ export default function CommunityPage() {
 
         {/* Communities Grid - Only show when not searching */}
         {!searchQuery && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 lg:gap-8">
             {/* Communities You Moderate */}
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <ShieldCheckIcon className="h-5 w-5 text-blue-600" />
-                <h2 className="text-lg lg:text-xl font-semibold text-gray-900">
-                  You Moderate
-                </h2>
-                <span className="bg-gray-100 text-gray-600 text-sm px-2 py-1 rounded-full">
+            <fieldset className="border border-gray-200 rounded-xl bg-white p-4 md:p-6">
+              <legend className="flex items-center space-x-2 px-3 text-sm md:text-base font-semibold text-gray-900">
+                <ShieldCheckIcon className="h-4 w-4 md:h-5 md:w-5 text-blue-600" />
+                <span>You Moderate</span>
+                <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
                   {moderatedCommunities.length}
                 </span>
-              </div>
+              </legend>
 
-              <div className="space-y-3 max-h-96 lg:max-h-none overflow-y-auto lg:overflow-visible">
-                {moderatedCommunities.length === 0 ? (
-                  <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6 text-center">
-                    <ShieldCheckIcon className="h-6 lg:h-8 w-6 lg:w-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-gray-500 text-sm">
-                      You don't moderate any meshes yet
-                    </p>
-                  </div>
-                ) : (
-                  moderatedCommunities.map((community) => (
+              {moderatedCommunities.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-8">
+                  <ShieldCheckIcon className="h-8 w-8 text-gray-300 mb-2" />
+                  <p className="text-gray-500 text-sm">
+                    You don't moderate any meshes yet
+                  </p>
+                </div>
+              ) : (
+                <div
+                  className={`space-y-3 ${
+                    moderatedCommunities.length > 4
+                      ? "max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+                      : ""
+                  }`}
+                >
+                  {moderatedCommunities.map((community) => (
                     <CommunityCard
                       key={community.id}
                       community={community}
                       showRole="Moderator"
                     />
-                  ))
-                )}
-              </div>
-            </div>
+                  ))}
+                </div>
+              )}
+            </fieldset>
 
             {/* Communities You're Part Of */}
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <UserGroupIcon className="h-5 w-5 text-green-600" />
-                <h2 className="text-lg lg:text-xl font-semibold text-gray-900">
-                  Your Meshes
-                </h2>
-                <span className="bg-gray-100 text-gray-600 text-sm px-2 py-1 rounded-full">
+            <fieldset className="border border-gray-200 rounded-xl bg-white p-4 md:p-6">
+              <legend className="flex items-center space-x-2 px-3 text-sm md:text-base font-semibold text-gray-900">
+                <UserGroupIcon className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
+                <span>Your Meshes</span>
+                <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
                   {joinedCommunities.length}
                 </span>
-              </div>
+              </legend>
 
-              <div className="space-y-3 max-h-96 lg:max-h-none overflow-y-auto lg:overflow-visible">
-                {joinedCommunities.length === 0 ? (
-                  <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6 text-center">
-                    <UserGroupIcon className="h-6 lg:h-8 w-6 lg:w-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-gray-500 text-sm">
-                      You haven't joined any meshes yet
-                    </p>
-                    <button
-                      onClick={() =>
-                        document
-                          .getElementById("recommendations")
-                          ?.scrollIntoView({ behavior: "smooth" })
-                      }
-                      className="text-blue-600 hover:text-blue-700 text-sm mt-2 block"
-                    >
-                      Browse recommendations →
-                    </button>
-                  </div>
-                ) : (
-                  joinedCommunities.map((community) => (
+              {joinedCommunities.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-8">
+                  <UserGroupIcon className="h-8 w-8 text-gray-300 mb-2" />
+                  <p className="text-gray-500 text-sm mb-2">
+                    You haven't joined any meshes yet
+                  </p>
+                  <button
+                    onClick={() =>
+                      document
+                        .getElementById("recommendations")
+                        ?.scrollIntoView({ behavior: "smooth" })
+                    }
+                    className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                  >
+                    Browse recommendations →
+                  </button>
+                </div>
+              ) : (
+                <div
+                  className={`space-y-3 ${
+                    joinedCommunities.length > 4
+                      ? "max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+                      : ""
+                  }`}
+                >
+                  {joinedCommunities.map((community) => (
                     <CommunityCard key={community.id} community={community} />
-                  ))
-                )}
-              </div>
-            </div>
+                  ))}
+                </div>
+              )}
+            </fieldset>
 
             {/* Recommended Communities */}
-            <div
-              className="space-y-4 md:col-span-2 lg:col-span-1"
+            <fieldset
+              className="border border-gray-200 rounded-xl bg-white p-4 md:p-6 md:col-span-2 lg:col-span-1"
               id="recommendations"
             >
-              <div className="flex items-center space-x-2">
-                <StarIcon className="h-5 w-5 text-yellow-600" />
-                <h2 className="text-lg lg:text-xl font-semibold text-gray-900">
-                  Recommendations
-                </h2>
-              </div>
+              <legend className="flex items-center space-x-2 px-3 text-sm md:text-base font-semibold text-gray-900">
+                <StarIcon className="h-4 w-4 md:h-5 md:w-5 text-yellow-600" />
+                <span>Recommendations</span>
+                <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">
+                  {recommendedCommunities.length}
+                </span>
+              </legend>
 
-              <div className="space-y-3 max-h-96 lg:max-h-none overflow-y-auto lg:overflow-visible">
-                {recommendedCommunities.length === 0 ? (
-                  <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6 text-center">
-                    <StarIcon className="h-6 lg:h-8 w-6 lg:w-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-gray-500 text-sm">
-                      No recommendations available
-                    </p>
-                  </div>
-                ) : (
-                  recommendedCommunities.map((community) => (
+              {recommendedCommunities.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-8">
+                  <StarIcon className="h-8 w-8 text-gray-300 mb-2" />
+                  <p className="text-gray-500 text-sm">
+                    No recommendations available
+                  </p>
+                </div>
+              ) : (
+                <div
+                  className={`space-y-3 ${
+                    recommendedCommunities.length > 4
+                      ? "max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+                      : ""
+                  }`}
+                >
+                  {recommendedCommunities.map((community) => (
                     <CommunityCard key={community.id} community={community} />
-                  ))
-                )}
-              </div>
-            </div>
+                  ))}
+                </div>
+              )}
+            </fieldset>
           </div>
         )}
       </div>
+
+      {/* Dialogs removed - using scrollable boxes instead */}
     </div>
   );
 }

@@ -34,6 +34,7 @@ interface FirestorePost {
   description: string;
   type: string;
   userId: string;
+  username?: string;
   createdAt: any;
   userEmail?: string;
   communityId?: string;
@@ -305,7 +306,7 @@ export default function DashboardPage() {
             title: post.title,
             description: post.description,
             category: category,
-            postedBy: post.userEmail?.split('@')[0] || 'Anonymous',
+            postedBy: post.username || post.userEmail?.split('@')[0] || 'Anonymous',
             postedAt: post.createdAt?.toDate ? post.createdAt.toDate().toISOString() : new Date().toISOString(),
             userId: post.userId,
             userEmail: post.userEmail,
@@ -439,11 +440,18 @@ export default function DashboardPage() {
 
     setIsSubmitting(true);
     try {
+      // Get user profile for username
+      const userProfileRef = doc(db, 'users', user.uid);
+      const userProfileSnap = await getDoc(userProfileRef);
+      const userData = userProfileSnap.exists() ? userProfileSnap.data() : null;
+      const username = userData?.username || userData?.displayName || user.email?.split('@')[0] || 'User';
+
       const postData: any = {
         title: formData.title.trim(),
         description: formData.description.trim(),
         type: formData.type,
         userId: user.uid,
+        username: username,
         createdAt: serverTimestamp(),
         userEmail: user.email || ''
       };
@@ -1203,7 +1211,7 @@ export default function DashboardPage() {
                               }}
                               className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer"
                             >
-                              {post.postedBy}
+                              @{post.postedBy}
                             </button>
                             {post.communityName && (
                               <>
@@ -1630,7 +1638,7 @@ export default function DashboardPage() {
                                   }}
                                   className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer truncate"
                                 >
-                                  {post.postedBy}
+                                  @{post.postedBy}
                                 </button>
                                 {post.communityName && (
                                   <>

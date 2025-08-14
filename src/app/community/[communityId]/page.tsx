@@ -21,6 +21,7 @@ const useModalScrollLock = (showEnrollmentForm: boolean, showCreatePostModal: bo
 interface Community {
   id: string;
   name: string;
+  username: string;
   description: string;
   memberCount: number;
   isPrivate: boolean;
@@ -48,6 +49,7 @@ interface Post {
   postedAt: string;
   userId: string;
   userEmail: string;
+  username?: string;
   communityId: string;
   communityName: string;
   submessId?: string;
@@ -136,7 +138,12 @@ export default function CommunityPage() {
       const communitySnap = await getDoc(communityRef);
       
       if (communitySnap.exists()) {
-        const communityData = { id: communitySnap.id, ...communitySnap.data() } as Community;
+        const rawData = communitySnap.data();
+        const communityData = { 
+          id: communitySnap.id, 
+          ...rawData,
+          username: rawData.username || rawData.name?.toLowerCase().replace(/[^a-zA-Z0-9]/g, '') || 'mesh'
+        } as Community;
         setCommunity(communityData);
         
         // Use the passed user or the state user
@@ -353,15 +360,23 @@ export default function CommunityPage() {
 
     setIsSubmittingPost(true);
     try {
+      // Get user profile for username
+      const userProfileRef = doc(db, 'users', user.uid);
+      const userProfileSnap = await getDoc(userProfileRef);
+      const userData = userProfileSnap.exists() ? userProfileSnap.data() : null;
+      const username = userData?.username || userData?.displayName || user.email?.split('@')[0] || 'User';
+
       const postData: any = {
         title: postFormData.title.trim(),
         description: postFormData.description.trim(),
         type: postFormData.submessId || 'General',
         userId: user.uid,
+        username: username,
         createdAt: serverTimestamp(),
         userEmail: user.email || '',
         communityId: communityId,
-        communityName: community.name
+        communityName: community.name,
+        communityUsername: community.username
       };
 
       // Add submesh information if selected
@@ -836,7 +851,7 @@ export default function CommunityPage() {
                                 }}
                                 className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer"
                               >
-                                {post.postedBy}
+                                @{post.username || post.postedBy}
                               </button>
                               {post.submessName && (
                                 <>
