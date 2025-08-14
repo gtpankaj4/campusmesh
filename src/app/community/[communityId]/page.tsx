@@ -50,6 +50,7 @@ interface Post {
   userId: string;
   userEmail: string;
   username?: string;
+  isAnonymous?: boolean;
   communityId: string;
   communityName: string;
   submessId?: string;
@@ -72,7 +73,8 @@ export default function CommunityPage() {
   const [postFormData, setPostFormData] = useState({
     title: '',
     description: '',
-    submessId: ''
+    submessId: '',
+    isAnonymous: false
   });
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
   const [toast, setToast] = useState({
@@ -225,10 +227,12 @@ export default function CommunityPage() {
             title: data.title,
             description: data.description,
             category: data.submessName || data.type || 'General',
-            postedBy: data.userEmail?.split('@')[0] || 'Anonymous',
+            postedBy: data.isAnonymous ? 'Anonymous' : (data.username || data.userEmail?.split('@')[0] || 'Anonymous'),
             postedAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
             userId: data.userId,
             userEmail: data.userEmail,
+            username: data.username,
+            isAnonymous: data.isAnonymous,
             communityId: data.communityId,
             communityName: data.communityName,
             submessId: data.submessId,
@@ -371,7 +375,8 @@ export default function CommunityPage() {
         description: postFormData.description.trim(),
         type: postFormData.submessId || 'General',
         userId: user.uid,
-        username: username,
+        username: postFormData.isAnonymous ? 'Anonymous' : username,
+        isAnonymous: postFormData.isAnonymous,
         createdAt: serverTimestamp(),
         userEmail: user.email || '',
         communityId: communityId,
@@ -413,7 +418,7 @@ export default function CommunityPage() {
       }
 
       setShowCreatePostModal(false);
-      setPostFormData({ title: '', description: '', submessId: '' });
+      setPostFormData({ title: '', description: '', submessId: '', isAnonymous: false });
       showToast('Post created successfully! +10 reputation gained!', 'success');
     } catch (error) {
       console.error('Error creating post:', error);
@@ -434,7 +439,7 @@ export default function CommunityPage() {
               <button
                 onClick={() => {
                   setShowCreatePostModal(false);
-                  setPostFormData({ title: '', description: '', submessId: '' });
+                  setPostFormData({ title: '', description: '', submessId: '', isAnonymous: false });
                 }}
                 className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
               >
@@ -495,12 +500,30 @@ export default function CommunityPage() {
                 />
                 <p className="text-xs text-gray-500 mt-1">{postFormData.description.length}/1000 characters</p>
               </div>
+
+              {/* Anonymous Posting Option */}
+              <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="anonymous"
+                  checked={postFormData.isAnonymous}
+                  onChange={(e) => setPostFormData(prev => ({ ...prev, isAnonymous: e.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="anonymous" className="flex-1">
+                  <div className="font-medium text-gray-900">Post anonymously</div>
+                  <div className="text-sm text-gray-600">
+                    Your identity will be hidden from other users
+                  </div>
+                </label>
+              </div>
+
               <div className="flex space-x-4 pt-2">
                 <button
                   type="button"
                   onClick={() => {
                     setShowCreatePostModal(false);
-                    setPostFormData({ title: '', description: '', submessId: '' });
+                    setPostFormData({ title: '', description: '', submessId: '', isAnonymous: false });
                   }}
                   className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
                 >

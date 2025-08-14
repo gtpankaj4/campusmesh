@@ -3,15 +3,24 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc, updateDoc, getDocs } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { PencilIcon } from "@heroicons/react/24/outline";
+import { PencilIcon, UserIcon, EnvelopeIcon, CalendarDaysIcon, AcademicCapIcon } from "@heroicons/react/24/outline";
+import PostInteractions from "@/components/PostInteractions";
 import RepBadge from "@/components/RepBadge";
 import Navbar from "@/components/Navbar";
 
 interface UserProfile {
   username?: string;
+  firstName?: string;
+  lastName?: string;
   displayName?: string;
+  email?: string;
+  university?: string;
+  bio?: string;
+  coverColor?: string;
+  showPostsToPublic?: boolean;
+  showEmailToPublic?: boolean;
   reputation: number;
   postsCount: number;
   commentsCount: number;
@@ -23,16 +32,27 @@ interface UserProfile {
 interface UserPost {
   id: string;
   title: string;
+  description: string;
   type: string;
+  userId?: string;
   createdAt: any;
+  communityName?: string;
+  submessName?: string;
+  meshType?: string;
+  upvotes?: number;
+  downvotes?: number;
+  commentsCount?: number;
 }
 
 export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [userPosts, setUserPosts] = useState<UserPost[]>([]);
+  const [userCommunities, setUserCommunities] = useState<any[]>([]);
+  const [actualPostsCount, setActualPostsCount] = useState(0);
+  const [actualCommentsCount, setActualCommentsCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'posts' | 'communities'>('overview');
+  const [activeTab, setActiveTab] = useState<'posts' | 'communities'>('posts');
   const router = useRouter();
 
   useEffect(() => {
@@ -41,6 +61,8 @@ export default function ProfilePage() {
         setUser(user);
         await loadUserProfile(user.uid);
         await loadUserPosts(user.uid);
+        await loadUserCommunities(user.uid);
+        await loadActualCounts(user.uid);
       } else {
         router.push("/login");
       }
@@ -97,6 +119,97 @@ export default function ProfilePage() {
     }
   };
 
+  const loadUserCommunities = async (userId: string) => {
+    try {
+      const userCommunitiesRef = collection(db, 'users', userId, 'communities');
+      const q = query(userCommunitiesRef, orderBy('joinedAt', 'desc'));
+      
+      const unsubscribe = onSnapshot(q, async (snapshot) => {
+        const communities = [];
+        
+        for (const docSnap of snapshot.docs) {
+          const communityData = docSnap.data();
+          try {
+            // Get full community details
+            const communityRef = doc(db, 'communities', communityData.communityId);
+            const communitySnap = await getDoc(communityRef);
+            
+            if (communitySnap.exists()) {
+              communities.push({
+                id: communityData.communityId,
+                name: communityData.communityName,
+                role: communityData.role,
+                joinedAt: communityData.joinedAt,
+                ...communitySnap.data()
+              });
+            }
+          } catch (error) {
+            console.error('Error loading community details:', error);
+          }
+        }
+        
+        setUserCommunities(communities);
+      });
+
+      return unsubscribe;
+    } catch (error) {
+      console.error('Error loading user communities:', error);
+    }
+  };
+
+  const formatTimeAgo = (date: Date): string => {
+    const now = Date.now();
+    const diffInSeconds = Math.floor((now - date.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  };
+
+  const loadActualCounts = async (userId: string) => {
+    try {
+      // Count all posts by user
+      const postsRef = collection(db, 'posts');
+      const postsQuery = query(postsRef, where('userId', '==', userId));
+      const postsSnapshot = await getDocs(postsQuery);
+      setActualPostsCount(postsSnapshot.size);
+
+      // Count all comments by user across all posts
+      let totalComments = 0;
+      const allPostsSnapshot = await getDocs(collection(db, 'posts'));
+      
+      for (const postDoc of allPostsSnapshot.docs) {
+        const commentsRef = collection(db, 'posts', postDoc.id, 'comments');
+        const commentsQuery = query(commentsRef, where('userId', '==', userId));
+        const commentsSnapshot = await getDocs(commentsQuery);
+        totalComments += commentsSnapshot.size;
+      }
+      
+      setActualCommentsCount(totalComments);
+    } catch (error) {
+      console.error('Error loading actual counts:', error);
+    }
+  };
+
+  const togglePostVisibility = async () => {
+    if (!user) return;
+    
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const newValue = !profile?.showPostsToPublic;
+      
+      await updateDoc(userRef, {
+        showPostsToPublic: newValue
+      });
+      
+      // Update local state
+      setProfile(prev => prev ? { ...prev, showPostsToPublic: newValue } : null);
+    } catch (error) {
+      console.error('Error updating post visibility:', error);
+    }
+  };
+
 
 
   if (loading) {
@@ -111,233 +224,278 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-gray-50">
       <Navbar userProfile={profile} />
       
-      {/* Mobile Layout */}
-      <div className="lg:hidden">
-
-        {/* Mobile Profile Content */}
-        <div className="px-4 py-6 pt-8">
-          {/* User Info */}
-          <div className="bg-white rounded-lg p-6 mb-6">
-            <div className="flex items-center space-x-4 mb-4">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                <span className="text-2xl font-bold text-blue-600">
-                  {user?.email?.charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <div className="flex-1">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  {profile?.displayName || profile?.username || user?.email?.split('@')[0] || 'User'}
-                </h2>
-                {profile?.username && (
-                  <p className="text-sm text-gray-600">@{profile.username}</p>
-                )}
-                <p className="text-sm text-gray-500">Member since {profile?.joinDate?.toDate ? 
-                  profile.joinDate.toDate().toLocaleDateString() : 'Recently'}</p>
-              </div>
+      <div className="max-w-6xl mx-auto px-4 py-6 pt-8">
+        {/* Cover Section */}
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">
+          <div 
+            className="h-48 relative"
+            style={{ backgroundColor: profile?.coverColor || '#3B82F6' }}
+          >
+            <div className="absolute top-4 right-4">
               <button
-                onClick={() => router.push('/profile/setup')}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-                title="Edit profile"
+                onClick={() => router.push('/profile/edit')}
+                className="bg-white bg-opacity-90 backdrop-blur-sm text-gray-900 px-3 py-2 rounded-full hover:bg-opacity-100 transition-all flex items-center space-x-2 shadow-sm border border-gray-200"
+                aria-label="Edit profile"
               >
                 <PencilIcon className="h-4 w-4" />
+                <span className="text-sm font-medium">Edit profile</span>
               </button>
             </div>
             
-            <div className="flex justify-center mb-4">
-              <RepBadge score={profile?.reputation || 0} size="lg" />
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 hover:scale-105 transition-transform duration-200">
-                <p className="text-2xl font-bold text-blue-600">{profile?.postsCount || 0}</p>
-                <p className="text-sm text-blue-500 font-medium">Posts</p>
+            <div className="absolute bottom-6 left-6 flex items-end space-x-4">
+              <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-lg">
+                <span className="text-3xl font-bold text-gray-700">
+                  {profile?.firstName?.charAt(0)?.toUpperCase() || user?.email?.charAt(0).toUpperCase()}
+                </span>
               </div>
-              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 hover:scale-105 transition-transform duration-200">
-                <p className="text-2xl font-bold text-green-600">{profile?.commentsCount || 0}</p>
-                <p className="text-sm text-green-500 font-medium">Comments</p>
-              </div>
-              <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl p-4 hover:scale-105 transition-transform duration-200">
-                <p className="text-2xl font-bold text-purple-600">{profile?.communitiesCount || 0}</p>
-                <p className="text-sm text-purple-500 font-medium">Meshes</p>
+              <div className="text-white pb-2">
+                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">
+                  {profile?.displayName || `${profile?.firstName} ${profile?.lastName}` || profile?.username || user?.email?.split('@')[0] || 'User'}
+                </h1>
+                <p className="text-sm sm:text-base lg:text-lg opacity-90">@{profile?.username || 'username'}</p>
               </div>
             </div>
           </div>
-
-          {/* Mobile Tabs */}
-          <div className="bg-white rounded-lg mb-6">
-            <div className="flex">
-              {(['overview', 'posts', 'communities'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-3 px-4 text-sm font-medium border-b-2 ${
-                    activeTab === tab
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500'
-                  }`}
-                >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tab Content */}
-          <div className="bg-white rounded-lg p-4">
-            {activeTab === 'overview' && (
-              <div className="space-y-4">
-                <h3 className="font-semibold text-gray-900">Recent Activity</h3>
-                {userPosts.slice(0, 3).map((post) => (
-                  <div key={post.id} className="border-b border-gray-100 pb-3">
-                    <p className="font-medium text-sm text-gray-900">{post.title}</p>
-                    <p className="text-xs text-gray-500">{post.type} • {post.createdAt?.toDate ? 
-                      post.createdAt.toDate().toLocaleDateString() : 'Recently'}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeTab === 'posts' && (
-              <div className="space-y-4">
-                <h3 className="font-semibold text-gray-900">My Posts</h3>
-                {userPosts.map((post) => (
-                  <div key={post.id} className="border-b border-gray-100 pb-3">
-                    <p className="font-medium text-sm text-gray-900">{post.title}</p>
-                    <p className="text-xs text-gray-500">{post.type} • {post.createdAt?.toDate ? 
-                      post.createdAt.toDate().toLocaleDateString() : 'Recently'}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeTab === 'communities' && (
-              <div className="text-center py-8">
-                <p className="text-gray-500">Communities feature coming soon!</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        
-      </div>
-
-      {/* Desktop Layout */}
-      <div className="hidden lg:block">
-
-        {/* Desktop Content */}
-        <div className="max-w-7xl mx-auto px-6 py-8 pt-8">
-          <div className="grid grid-cols-12 gap-8">
-            {/* Left Sidebar */}
-            <div className="col-span-4">
-              <div className="bg-white rounded-xl shadow-sm border p-6 sticky top-8">
-                <div className="text-center mb-6">
-                  <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <span className="text-4xl font-bold text-blue-600">
-                      {user?.email?.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-center space-x-2 mb-2">
-                    <h2 className="text-xl font-semibold text-gray-900">
-                      {profile?.displayName || profile?.username || user?.email?.split('@')[0] || 'User'}
-                    </h2>
-                    <button
-                      onClick={() => router.push('/profile/setup')}
-                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-                      title="Edit profile"
-                    >
-                      <PencilIcon className="h-3 w-3" />
-                    </button>
-                  </div>
-                  {profile?.username && (
-                    <p className="text-sm text-gray-600 mb-2">@{profile.username}</p>
+          
+          <div className="p-6">
+            <hr className="mb-6" />
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Column - Bio and Details */}
+              <div className="lg:col-span-1">
+                <div className="space-y-4">
+                  {profile?.bio && (
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-2">About</h3>
+                      <p className="text-gray-600">{profile.bio}</p>
+                    </div>
                   )}
-                  <p className="text-sm text-gray-500 mb-4">Member since {profile?.joinDate?.toDate ? 
-                    profile.joinDate.toDate().toLocaleDateString() : 'Recently'}</p>
-                  <RepBadge score={profile?.reputation || 0} size="lg" />
-                </div>
-
-                {/* Stats */}
-                <div className="grid grid-cols-3 gap-4 text-center mb-6">
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-2xl font-bold text-gray-900">{profile?.postsCount || 0}</p>
-                    <p className="text-sm text-gray-500">Posts</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-2xl font-bold text-gray-900">{profile?.commentsCount || 0}</p>
-                    <p className="text-sm text-gray-500">Comments</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-2xl font-bold text-gray-900">{profile?.communitiesCount || 0}</p>
-                    <p className="text-sm text-gray-500">Communities</p>
-                  </div>
-                </div>
-
-                {/* Navigation */}
-                <div className="space-y-2">
-                  {(['overview', 'posts', 'communities'] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className={`w-full text-left p-3 rounded-lg transition-colors ${
-                        activeTab === tab
-                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                          : 'text-gray-600 hover:bg-gray-50'
-                      }`}
-                    >
-                      <span className="font-medium">{tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
-                    </button>
-                  ))}
-
-                </div>
-              </div>
-            </div>
-
-            {/* Main Content */}
-            <div className="col-span-8">
-              <div className="bg-white rounded-xl shadow-sm border p-6">
-                {activeTab === 'overview' && (
+                  
                   <div>
-                    <h2 className="text-xl font-semibold text-gray-900 mb-6">Overview</h2>
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="font-medium text-gray-900 mb-3">Recent Activity</h3>
-                        {userPosts.slice(0, 5).map((post) => (
-                          <div key={post.id} className="border-b border-gray-100 pb-3 mb-3">
-                            <p className="font-medium text-gray-900">{post.title}</p>
-                            <p className="text-sm text-gray-500">{post.type} • {post.createdAt?.toDate ? 
-                              post.createdAt.toDate().toLocaleDateString() : 'Recently'}</p>
-                          </div>
-                        ))}
+                    <h3 className="font-semibold text-gray-900 mb-2">Details</h3>
+                    <div className="space-y-2 text-sm text-gray-600">
+                      {profile?.university && (
+                        <div className="flex items-center space-x-2">
+                          <AcademicCapIcon className="h-4 w-4 text-gray-400" />
+                          <span>{profile.university}</span>
+                        </div>
+                      )}
+                      {(profile?.showEmailToPublic || user?.uid === user?.uid) && (
+                        <div className="flex items-center space-x-2">
+                          <EnvelopeIcon className="h-4 w-4 text-gray-400" />
+                          <span>{profile?.email || user?.email}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center space-x-2">
+                        <CalendarDaysIcon className="h-4 w-4 text-gray-400" />
+                        <span>Member since {profile?.joinDate?.toDate ? 
+                          profile.joinDate.toDate().toLocaleDateString() : 'Recently'}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RepBadge score={profile?.reputation || 0} size="sm" />
+                        <span>{profile?.reputation || 0} reputation</span>
                       </div>
                     </div>
                   </div>
-                )}
 
+                  {/* Privacy Toggle */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium text-gray-900 text-sm">Show posts to visitors</h4>
+                        <p className="text-xs text-gray-600">
+                          {profile?.showPostsToPublic ? 'Your public posts are visible to everyone' : 'Your posts are only visible to mesh members'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => togglePostVisibility()}
+                        className={`w-11 h-6 rounded-full relative transition-colors ${profile?.showPostsToPublic ? 'bg-blue-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${profile?.showPostsToPublic ? 'translate-x-5' : 'translate-x-0.5'} shadow-sm`}></div>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="bg-blue-50 rounded-lg p-3">
+                      <p className="text-xl font-bold text-blue-600">{actualPostsCount}</p>
+                      <p className="text-xs text-blue-500">Posts</p>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-3">
+                      <p className="text-xl font-bold text-green-600">{actualCommentsCount}</p>
+                      <p className="text-xs text-green-500">Comments</p>
+                    </div>
+                    <div className="bg-purple-50 rounded-lg p-3">
+                      <p className="text-xl font-bold text-purple-600">{userCommunities.length}</p>
+                      <p className="text-xs text-purple-500">Meshes</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column - Posts */}
+              <div className="lg:col-span-2">
+                <div className="bg-gray-50 rounded-lg p-1 mb-6">
+                  <div className="flex">
+                    <button
+                      onClick={() => setActiveTab('posts')}
+                      className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-colors ${
+                        activeTab === 'posts'
+                          ? 'bg-white text-blue-600 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Posts ({userPosts.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('communities')}
+                      className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-colors ${
+                        activeTab === 'communities'
+                          ? 'bg-white text-blue-600 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Meshes ({userCommunities.length})
+                    </button>
+                  </div>
+                </div>
+
+                {/* Posts Content */}
                 {activeTab === 'posts' && (
                   <div>
-                    <h2 className="text-xl font-semibold text-gray-900 mb-6">My Posts</h2>
-                    <div className="space-y-4">
-                      {userPosts.map((post) => (
-                        <div key={post.id} className="border border-gray-200 rounded-lg p-4">
-                          <p className="font-medium text-gray-900">{post.title}</p>
-                          <p className="text-sm text-gray-500">{post.type} • {post.createdAt?.toDate ? 
-                            post.createdAt.toDate().toLocaleDateString() : 'Recently'}</p>
-                        </div>
-                      ))}
-                    </div>
+                    {userPosts.length === 0 ? (
+                      <div className="text-center py-12">
+                        <UserIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">No posts yet</h3>
+                        <p className="text-gray-500">Start sharing your thoughts with the community!</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {userPosts.map((post) => (
+                          <div 
+                            key={post.id} 
+                            className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 flex flex-col h-full group cursor-pointer"
+                            onClick={() => router.push(`/post/${post.id}`)}
+                          >
+                            <div className="p-4 pb-2">
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center text-xs text-gray-500 space-x-1">
+                                  <button className="font-medium text-gray-700 hover:text-blue-600 cursor-pointer">
+                                    @{profile?.username || user?.email?.split('@')[0] || 'user'}
+                                  </button>
+                                  {post.communityName && (
+                                    <>
+                                      <span>›</span>
+                                      <span className="px-2 py-0.5 bg-stone-100 text-stone-700 rounded-md text-xs hover:bg-stone-200 cursor-pointer transition-colors" title={post.communityName}>
+                                        {post.communityName}
+                                      </span>
+                                    </>
+                                  )}
+                                  {post.submessName && (
+                                    <>
+                                      <span>›</span>
+                                      <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md text-xs font-medium">
+                                        {post.submessName}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                                <span className="text-xs text-gray-400">
+                                  {post.createdAt?.toDate ? 
+                                    formatTimeAgo(post.createdAt.toDate()) : 'Recently'}
+                                </span>
+                              </div>
+                              <h3 className="font-semibold text-gray-900 text-base leading-tight mb-2 cursor-pointer hover:text-blue-600 transition-colors line-clamp-2">
+                                {post.title}
+                              </h3>
+                            </div>
+                            
+                            <div className="px-4 pb-3 flex-1">
+                              <div className="text-gray-600 text-sm leading-relaxed">
+                                <p className="line-clamp-3">{post.description}</p>
+                                {post.description && post.description.length > 150 && (
+                                  <button className="text-blue-600 hover:text-blue-700 text-xs mt-2 font-medium inline-flex items-center group-hover:underline">
+                                    Read more
+                                    <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            
+                            <PostInteractions 
+                              postId={post.id} 
+                              postUserId={post.userId || user?.uid || ''} 
+                              onCommentClick={() => router.push(`/post/${post.id}`)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
+                {/* Communities Content */}
                 {activeTab === 'communities' && (
-                  <div className="text-center py-12">
-                    <div className="text-gray-400 mb-4">
-                      <svg className="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Communities Coming Soon!</h3>
-                    <p className="text-gray-500">Create and join private communities with your classmates.</p>
+                  <div>
+                    {userCommunities.length === 0 ? (
+                      <div className="text-center py-12">
+                        <UserIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">No meshes yet</h3>
+                        <p className="text-gray-500">Join some meshes to connect with your community!</p>
+                        <button
+                          onClick={() => router.push('/community')}
+                          className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                        >
+                          Browse Meshes
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-4">
+                        {userCommunities.map((community) => (
+                          <div 
+                            key={community.id} 
+                            className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                            onClick={() => router.push(`/community/${community.id}?returnTo=/profile`)}
+                          >
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex items-center space-x-3 min-w-0 flex-1">
+                                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                  <span className="text-lg font-bold text-blue-600">
+                                    {community.name?.charAt(0)?.toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <h3 className="font-semibold text-gray-900 truncate">{community.name}</h3>
+                                  <p className="text-sm text-gray-600 line-clamp-2 sm:line-clamp-1">{community.description}</p>
+                                </div>
+                              </div>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium flex-shrink-0 ml-2 ${
+                                community.role === 'admin' ? 'bg-purple-100 text-purple-800' :
+                                community.role === 'moderator' ? 'bg-blue-100 text-blue-800' :
+                                'bg-green-100 text-green-800'
+                              }`}>
+                                {community.role}
+                              </span>
+                            </div>
+                            
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm text-gray-500 space-y-2 sm:space-y-0">
+                              <div className="flex items-center space-x-4">
+                                <span>{community.memberCount || 0} members</span>
+                                <span>•</span>
+                                <span>{community.isPrivate ? 'Private' : 'Public'}</span>
+                              </div>
+                              <span className="text-xs">
+                                Joined {community.joinedAt?.toDate ? 
+                                  community.joinedAt.toDate().toLocaleDateString() : 'Recently'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -345,7 +503,6 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
-
     </div>
   );
 } 

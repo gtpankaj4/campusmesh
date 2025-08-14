@@ -152,7 +152,7 @@ export default function ProfileSetupPage() {
         updatedAt: new Date(),
       });
 
-      router.push('/profile');
+      router.push('/profile/edit');
     } catch (error) {
       console.error('Error updating profile:', error);
       alert('Error updating profile. Please try again.');

@@ -23,6 +23,7 @@ interface Post {
   postedAt: string;
   userId?: string;
   userEmail?: string;
+  isAnonymous?: boolean;
   communityId?: string;
   communityName?: string;
   submessId?: string;
@@ -35,6 +36,7 @@ interface FirestorePost {
   type: string;
   userId: string;
   username?: string;
+  isAnonymous?: boolean;
   createdAt: any;
   userEmail?: string;
   communityId?: string;
@@ -78,7 +80,8 @@ export default function DashboardPage() {
     description: '',
     type: '',
     communityId: '',
-    submessId: ''
+    submessId: '',
+    isAnonymous: false
   });
   const [toast, setToast] = useState({
     message: '',
@@ -306,10 +309,11 @@ export default function DashboardPage() {
             title: post.title,
             description: post.description,
             category: category,
-            postedBy: post.username || post.userEmail?.split('@')[0] || 'Anonymous',
+            postedBy: post.isAnonymous ? 'Anonymous' : (post.username || post.userEmail?.split('@')[0] || 'Anonymous'),
             postedAt: post.createdAt?.toDate ? post.createdAt.toDate().toISOString() : new Date().toISOString(),
             userId: post.userId,
             userEmail: post.userEmail,
+            isAnonymous: post.isAnonymous,
             communityId: post.communityId,
             communityName: post.communityName,
             submessId: post.submessId,
@@ -451,7 +455,8 @@ export default function DashboardPage() {
         description: formData.description.trim(),
         type: formData.type,
         userId: user.uid,
-        username: username,
+        username: formData.isAnonymous ? 'Anonymous' : username,
+        isAnonymous: formData.isAnonymous,
         createdAt: serverTimestamp(),
         userEmail: user.email || ''
       };
@@ -507,7 +512,7 @@ export default function DashboardPage() {
       console.log('User reputation updated successfully');
 
       setShowModal(false);
-      setFormData({ title: '', description: '', type: '', communityId: '', submessId: '' });
+      setFormData({ title: '', description: '', type: '', communityId: '', submessId: '', isAnonymous: false });
       setMeshSearchQuery('');
       setShowMeshDropdown(false);
       showToast(`Post created! +10 reputation gained!`, 'success');
@@ -749,7 +754,7 @@ export default function DashboardPage() {
               <button
                 onClick={() => {
                   setShowModal(false);
-                  setFormData({ title: '', description: '', type: '', communityId: '', submessId: '' });
+                  setFormData({ title: '', description: '', type: '', communityId: '', submessId: '', isAnonymous: false });
                   setMeshSearchQuery('');
                   setShowMeshDropdown(false);
                 }}
@@ -891,12 +896,29 @@ export default function DashboardPage() {
                 <p className="text-xs text-gray-500 mt-1">{formData.description.length}/500 characters</p>
               </div>
 
+              {/* Anonymous Posting Option */}
+              <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="anonymous"
+                  checked={formData.isAnonymous}
+                  onChange={(e) => setFormData({ ...formData, isAnonymous: e.target.checked })}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="anonymous" className="flex-1">
+                  <div className="font-medium text-gray-900">Post anonymously</div>
+                  <div className="text-sm text-gray-600">
+                    Your identity will be hidden from other users
+                  </div>
+                </label>
+              </div>
+
               <div className="flex space-x-4 pt-4">
                 <button
                   type="button"
                   onClick={() => {
                     setShowModal(false);
-                    setFormData({ title: '', description: '', type: '', communityId: '', submessId: '' });
+                    setFormData({ title: '', description: '', type: '', communityId: '', submessId: '', isAnonymous: false });
                     setMeshSearchQuery('');
                     setShowMeshDropdown(false);
                   }}
