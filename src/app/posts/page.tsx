@@ -604,7 +604,7 @@ export default function CommunitiesPage() {
         
         await updateDoc(communityRef, {
           members: currentMembers,
-          memberCount: Math.max(0, (communityData.memberCount || 1) - 1)
+          memberCount: increment(-1)
         });
       }
 

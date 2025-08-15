@@ -6,7 +6,7 @@ import { auth, db } from '@/lib/firebase';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { 
   collection, doc, getDoc, getDocs, updateDoc, deleteDoc, addDoc, 
-  serverTimestamp, query, where, orderBy 
+  serverTimestamp, query, where, orderBy, increment 
 } from 'firebase/firestore';
 import { 
   TrashIcon, UserMinusIcon, ClockIcon, PlusIcon, XMarkIcon, 
@@ -18,6 +18,7 @@ import Navbar from '@/components/Navbar';
 import Toast from '@/components/Toast';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
+import { fixSingleCommunityMemberCount } from '@/lib/memberCountUtils';
 
 interface Community {
   id: string;
@@ -82,7 +83,7 @@ export default function CommunityModerationPage() {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [members, setMembers] = useState<CommunityMember[]>([]);
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
-  const [activeTab, setActiveTab] = useState<'posts' | 'members' | 'submeshes' | 'edit' | 'requests'>('posts');
+  const [activeTab, setActiveTab] = useState<'posts' | 'members' | 'submeshes' | 'edit' | 'requests' | 'settings'>('posts');
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<string | null>(null);
   const [newSubmesh, setNewSubmesh] = useState({ name: '', description: '', color: '#3B82F6' });
@@ -98,6 +99,12 @@ export default function CommunityModerationPage() {
   const [showAnswersModal, setShowAnswersModal] = useState(false);
   const [selectedJoinRequest, setSelectedJoinRequest] = useState<JoinRequest | null>(null);
   const [toast, setToast] = useState({ message: '', type: 'success' as 'success' | 'error', isVisible: false });
+  const [fixingMemberCount, setFixingMemberCount] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState({ 
+    isVisible: false, 
+    countdown: 10,
+    timeoutId: null as NodeJS.Timeout | null
+  });
   
   // Confirmation dialog states
   const [confirmDialog, setConfirmDialog] = useState({
@@ -105,7 +112,9 @@ export default function CommunityModerationPage() {
     title: '',
     message: '',
     onConfirm: () => {},
-    type: 'danger' as 'danger' | 'warning' | 'info'
+    type: 'danger' as 'danger' | 'warning' | 'info',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel'
   });
   
   // Prevent body scroll when modals are open
@@ -120,13 +129,22 @@ export default function CommunityModerationPage() {
     setToast({ message, type, isVisible: true });
   };
 
-  const showConfirmDialog = (title: string, message: string, onConfirm: () => void, type: 'danger' | 'warning' | 'info' = 'danger') => {
+  const showConfirmDialog = (
+    title: string, 
+    message: string, 
+    onConfirm: () => void, 
+    type: 'danger' | 'warning' | 'info' = 'danger',
+    confirmText: string = 'Confirm',
+    cancelText: string = 'Cancel'
+  ) => {
     setConfirmDialog({
       isOpen: true,
       title,
       message,
       onConfirm,
-      type
+      type,
+      confirmText,
+      cancelText
     });
   };
 
@@ -137,6 +155,24 @@ export default function CommunityModerationPage() {
     }
     loadCommunityData();
   }, [user, communityId]);
+
+  // Cleanup delete confirmation timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (deleteConfirmation.timeoutId) {
+        clearInterval(deleteConfirmation.timeoutId);
+      }
+    };
+  }, [deleteConfirmation.timeoutId]);
+
+  // Cleanup delete confirmation timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (deleteConfirmation.timeoutId) {
+        clearInterval(deleteConfirmation.timeoutId);
+      }
+    };
+  }, [deleteConfirmation.timeoutId]);
 
   // Handle URL tab parameter for notification redirects
   useEffect(() => {
@@ -574,7 +610,7 @@ export default function CommunityModerationPage() {
         const communityRef = doc(db, 'communities', communityId);
         await updateDoc(communityRef, {
           members: updatedMembers,
-          memberCount: Math.max(0, community.memberCount - 1)
+          memberCount: increment(-1)
         });
       }
 
@@ -712,6 +748,124 @@ export default function CommunityModerationPage() {
     }
   };
 
+  // Fix member count inconsistencies
+  const handleFixMemberCount = async () => {
+    setFixingMemberCount(true);
+    try {
+      const result = await fixSingleCommunityMemberCount(communityId);
+      
+      if (result.oldCount !== result.newCount) {
+        showToast(`Member count fixed: ${result.oldCount} → ${result.newCount}`, 'success');
+        // Refresh community data
+        await loadCommunityData();
+      } else {
+        showToast('Member count is already correct', 'success');
+      }
+    } catch (error) {
+      console.error('Error fixing member count:', error);
+      showToast('Failed to fix member count', 'error');
+    } finally {
+      setFixingMemberCount(false);
+    }
+  };
+
+  // Delete entire community - show confirmation toast
+  const handleDeleteCommunity = () => {
+    setDeleteConfirmation({ isVisible: true, countdown: 10, timeoutId: null });
+    
+    // Start countdown
+    const startCountdown = () => {
+      const timeoutId = setInterval(() => {
+        setDeleteConfirmation(prev => {
+          if (prev.countdown <= 1) {
+            clearInterval(timeoutId);
+            return { isVisible: false, countdown: 10, timeoutId: null };
+          }
+          return { ...prev, countdown: prev.countdown - 1 };
+        });
+      }, 1000);
+      
+      setDeleteConfirmation(prev => ({ ...prev, timeoutId }));
+    };
+    
+    startCountdown();
+  };
+
+  // Actually delete the community
+  const executeDeleteCommunity = async () => {
+    // Clear the confirmation toast
+    if (deleteConfirmation.timeoutId) {
+      clearInterval(deleteConfirmation.timeoutId);
+    }
+    setDeleteConfirmation({ isVisible: false, countdown: 10, timeoutId: null });
+    
+    setProcessing('delete-community');
+    try {
+      // Delete all posts in the community
+      const postsQuery = query(collection(db, 'posts'), where('communityId', '==', communityId));
+      const postsSnapshot = await getDocs(postsQuery);
+      
+      const deletePromises = [];
+      
+      // Delete all posts
+      for (const postDoc of postsSnapshot.docs) {
+        deletePromises.push(deleteDoc(doc(db, 'posts', postDoc.id)));
+      }
+      
+      // Remove community from all users' communities subcollection
+      const allUsersRef = collection(db, 'users');
+      const allUsersSnapshot = await getDocs(allUsersRef);
+      
+      for (const userDoc of allUsersSnapshot.docs) {
+        const userCommunitiesRef = collection(db, 'users', userDoc.id, 'communities');
+        const userCommunitiesSnapshot = await getDocs(userCommunitiesRef);
+        
+        for (const userCommunityDoc of userCommunitiesSnapshot.docs) {
+          if (userCommunityDoc.data().communityId === communityId) {
+            deletePromises.push(deleteDoc(doc(db, 'users', userDoc.id, 'communities', userCommunityDoc.id)));
+          }
+        }
+      }
+      
+      // Delete join requests
+      const joinRequestsQuery = query(collection(db, 'joinRequests'), where('communityId', '==', communityId));
+      const joinRequestsSnapshot = await getDocs(joinRequestsQuery);
+      
+      for (const requestDoc of joinRequestsSnapshot.docs) {
+        deletePromises.push(deleteDoc(doc(db, 'joinRequests', requestDoc.id)));
+      }
+      
+      // Execute all deletions
+      await Promise.all(deletePromises);
+      
+      // Finally delete the community itself
+      await deleteDoc(doc(db, 'communities', communityId));
+      
+      showToast('Community deleted successfully', 'success');
+      
+      // Redirect to communities page after a short delay
+      setTimeout(() => {
+        router.push('/community');
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Error deleting community:', error);
+      showToast('Failed to delete community. Please try again.', 'error');
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  // Cancel delete confirmation
+  const cancelDeleteCommunity = () => {
+    if (deleteConfirmation.timeoutId) {
+      clearInterval(deleteConfirmation.timeoutId);
+    }
+    setDeleteConfirmation({ isVisible: false, countdown: 10, timeoutId: null });
+  };
+
+  // Delete entire community - show confirmation toast
+
   // Filter posts and members based on search query
   const filteredPosts = posts.filter(post => 
     !searchQuery.trim() || 
@@ -843,6 +997,17 @@ export default function CommunityModerationPage() {
           >
             <CogIcon className="h-4 w-4 inline mr-1 sm:mr-2" />
             <span className="hidden sm:inline">Edit</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`flex-shrink-0 py-2 px-3 sm:px-4 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+              activeTab === 'settings'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <CogIcon className="h-4 w-4 inline mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Settings</span>
           </button>
         </div>
 
@@ -1320,6 +1485,143 @@ export default function CommunityModerationPage() {
             </div>
           </div>
         )}
+
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            {/* Community Health */}
+            <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Community Health</h3>
+              <div className="space-y-4">
+                {/* Member Count Fix */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-blue-50 rounded-lg space-y-3 sm:space-y-0">
+                  <div className="flex-1">
+                    <h4 className="font-medium text-gray-900">Member Count</h4>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Current count: <span className="font-medium">{community.memberCount}</span> members
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Fix any inconsistencies between displayed member count and actual members
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleFixMemberCount}
+                    disabled={fixingMemberCount}
+                    className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 text-sm font-medium"
+                  >
+                    {fixingMemberCount ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <span>Fixing...</span>
+                      </>
+                    ) : (
+                      <span>Fix Member Count</span>
+                    )}
+                  </button>
+                </div>
+                
+                <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
+                  <p className="font-medium mb-1">What this does:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Counts actual members in the community</li>
+                    <li>Updates the member count to match the real number</li>
+                    <li>Fixes negative member counts caused by sync issues</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Danger Zone */}
+            <div className="bg-white rounded-lg shadow-sm border border-red-200 p-4 sm:p-6">
+              <h3 className="text-lg font-medium text-red-900 mb-4 flex items-center">
+                <ShieldExclamationIcon className="h-5 w-5 mr-2" />
+                Danger Zone
+              </h3>
+              <div className="space-y-4">
+                {/* Delete Community */}
+                <div className="relative flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-red-50 rounded-lg space-y-3 sm:space-y-0 border border-red-200">
+                  <div className="flex-1">
+                    <h4 className="font-medium text-red-900">Delete Community</h4>
+                    <p className="text-sm text-red-700 mt-1">
+                      Permanently delete this mesh and all its content
+                    </p>
+                    <p className="text-xs text-red-600 mt-1">
+                      This action cannot be undone. All posts, members, and data will be lost forever.
+                    </p>
+                  </div>
+                  <div className="relative">
+                    <button
+                      onClick={handleDeleteCommunity}
+                      disabled={processing === 'delete-community'}
+                      className="w-full sm:w-auto px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 text-sm font-medium"
+                    >
+                      {processing === 'delete-community' ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          <span>Deleting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <TrashIcon className="h-4 w-4" />
+                          <span>Delete Mesh</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Delete Confirmation Toast - Positioned above button */}
+                    {deleteConfirmation.isVisible && (
+                      <div className="absolute bottom-full mb-2 right-0 sm:bottom-full sm:right-0 sm:mb-2 z-50 w-72 sm:w-80 max-w-xs sm:max-w-sm transform sm:-translate-x-16">
+                        <div className="bg-red-600 text-white rounded-lg shadow-lg p-4 border-l-4 border-red-800 animate-in slide-in-from-top-2 duration-300">
+                          <div className="flex items-start space-x-3">
+                            <div className="flex-shrink-0">
+                              <ShieldExclamationIcon className="h-6 w-6 text-red-200" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-sm font-bold text-white mb-1">
+                                🚨 Delete "{community?.name}"?
+                              </h4>
+                              <p className="text-xs text-red-100 mb-3">
+                                This will permanently delete all posts, members, and data. This action cannot be undone!
+                              </p>
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+                                <div className="flex space-x-2">
+                                  <button
+                                    onClick={executeDeleteCommunity}
+                                    className="px-3 py-1.5 bg-red-800 hover:bg-red-900 text-white text-xs font-medium rounded transition-colors"
+                                  >
+                                    DELETE FOREVER
+                                  </button>
+                                  <button
+                                    onClick={cancelDeleteCommunity}
+                                    className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                                <div className="text-xs text-red-200 font-mono self-end sm:self-auto">
+                                  {deleteConfirmation.countdown}s
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="text-xs text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
+                  <p className="font-medium mb-1">⚠️ Warning:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>All posts and comments will be permanently deleted</li>
+                    <li>All member data and relationships will be removed</li>
+                    <li>Community will be removed from all user profiles</li>
+                    <li>This action is irreversible</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Timeout Modal */}
@@ -1586,6 +1888,46 @@ export default function CommunityModerationPage() {
         onClose={() => setToast({ ...toast, isVisible: false })}
       />
 
+      {/* Delete Confirmation Toast */}
+      {deleteConfirmation.isVisible && (
+        <div className="fixed top-4 right-4 z-50 max-w-sm w-full">
+          <div className="bg-red-600 text-white rounded-lg shadow-lg p-4 border-l-4 border-red-800">
+            <div className="flex items-start space-x-3">
+              <div className="flex-shrink-0">
+                <ShieldExclamationIcon className="h-6 w-6 text-red-200" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-sm font-bold text-white mb-1">
+                  🚨 Delete "{community?.name}"?
+                </h4>
+                <p className="text-xs text-red-100 mb-3">
+                  This will permanently delete all posts, members, and data. This action cannot be undone!
+                </p>
+                <div className="flex items-center justify-between">
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={executeDeleteCommunity}
+                      className="px-3 py-1.5 bg-red-800 hover:bg-red-900 text-white text-xs font-medium rounded transition-colors"
+                    >
+                      DELETE FOREVER
+                    </button>
+                    <button
+                      onClick={cancelDeleteCommunity}
+                      className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <div className="text-xs text-red-200 font-mono">
+                    {deleteConfirmation.countdown}s
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}
         onClose={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
@@ -1593,6 +1935,8 @@ export default function CommunityModerationPage() {
         title={confirmDialog.title}
         message={confirmDialog.message}
         type={confirmDialog.type}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
       />
     </div>
   );
